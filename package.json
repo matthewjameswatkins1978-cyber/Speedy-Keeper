@@ -1,14 +1,24 @@
 {
   "name": "speedy-keeper",
   "version": "0.1.0",
-  "description": "",
+  "description": "Small dependable memory core for coding agents: decisions, gotchas and checkpoints over SQLite FTS5.",
+  "type": "module",
+  "bin": {
+    "keeper": "dist/src/cli.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test \"dist/test/*.test.js\"",
+    "bench:startup": "node --input-type=module -e \"const t=performance.now(); await import('./dist/src/cli.js').catch(()=>{});\"",
+    "cli": "node dist/src/cli.js"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^7.0.2"
