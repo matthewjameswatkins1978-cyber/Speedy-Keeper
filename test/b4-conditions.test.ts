@@ -18,17 +18,13 @@ interface Plan {
   cwd: string;
 }
 
-test('dry run plans the 12-run A/B/C/D matrix with correct wiring', async () => {
+test('dry run plans the scout matrix (32) with correct A/B/C/D wiring', async () => {
   // @ts-ignore: untyped trial helper (mjs)
   const { dryRun } = await import(trial('run.mjs'));
-  const plans = dryRun() as Plan[];
-  assert.equal(plans.length, 12, '3 tasks × 4 conditions');
-  const ids = plans.map((p) => `${p.taskId}/${p.condition}`).sort();
-  assert.deepEqual(ids, [
-    'T1-recall/A', 'T1-recall/B', 'T1-recall/C', 'T1-recall/D',
-    'T2-stale-hostile/A', 'T2-stale-hostile/B', 'T2-stale-hostile/C', 'T2-stale-hostile/D',
-    'T3-hostile-only/A', 'T3-hostile-only/B', 'T3-hostile-only/C', 'T3-hostile-only/D',
-  ]);
+  const plans = dryRun('scout') as Plan[];
+  assert.equal(plans.length, 32, '4 scout tasks × 4 conditions × 2 reps');
+  assert.deepEqual([...new Set(plans.map((p) => p.condition))].sort(), ['A', 'B', 'C', 'D']);
+  assert.equal(new Set(plans.map((p) => p.taskId)).size, 4, 'scout covers four representative tasks');
   for (const p of plans) {
     assert.ok(p.command.includes('"--thinking" "off"'), p.command);
     assert.ok(p.command.includes('"--session-dir"'), p.command);

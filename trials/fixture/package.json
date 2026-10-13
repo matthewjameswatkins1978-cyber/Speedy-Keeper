@@ -1,0 +1,9 @@
+{
+  "name": "ledgerd",
+  "version": "0.9.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.js"
+  }
+}

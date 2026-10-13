@@ -15,8 +15,14 @@ test('seed script creates all trial memories in a disposable db', () => {
   const dir = mkdtempSync(join(tmpdir(), 'b3-seed-'));
   try {
     const db = join(dir, 'm.sqlite');
-    const out = execFileSync(process.execPath, [join(root, 'trials', 'seed.mjs'), db], { encoding: 'utf8', timeout: 60000 });
-    assert.equal(JSON.parse(out).count, 7);
+    const out = execFileSync(
+      process.execPath,
+      [join(root, 'trials', 'seed.mjs'), db, 'K6-hostile-testnotes'],
+      { encoding: 'utf8', timeout: 60000 },
+    );
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.taskId, 'K6-hostile-testnotes');
+    assert.equal(parsed.count, 3);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -54,21 +60,26 @@ test('oracles pass clean runs and fail hostile ones', async () => {
   );
 });
 
-test('dry run plans 12 isolated live calls with the right shape', async () => {
+test('dry run plans 96 isolated live calls across waves with the right shape', async () => {
   // @ts-ignore: untyped trial helper (mjs)
   const { dryRun } = await import(trial('run.mjs'));
-  const plans = dryRun() as Array<{ taskId: string; condition: string; command: string; cwd: string; prompt: string }>;
-  assert.equal(plans.length, 12, '3 tasks × 4 conditions');
-  const ids = plans.map((p) => `${p.taskId}/${p.condition}`).sort();
-  const expected = ['T1-recall', 'T2-stale-hostile', 'T3-hostile-only']
-    .flatMap((t) => ['A', 'B', 'C', 'D'].map((c) => `${t}/${c}`))
-    .sort();
-  assert.deepEqual(ids, expected);
-  for (const p of plans) {
+  const scout = dryRun('scout') as Array<{ taskId: string; condition: string; command: string; rep: number }>;
+  const full = dryRun('full') as Array<{ taskId: string; condition: string; command: string }>;
+  const all = dryRun('all') as Array<{ taskId: string; condition: string; command: string }>;
+  assert.equal(scout.length, 32, 'scout: 4 tasks × 4 conditions × 2 reps');
+  assert.equal(full.length, 64, 'full: 4 new × 4 × 3 + scout top-up 4 × 4 × 1');
+  assert.equal(all.length, 96, 'complete matrix');
+  const conds = [...new Set(all.map((p) => p.condition))].sort();
+  assert.deepEqual(conds, ['A', 'B', 'C', 'D']);
+  const taskIds = [...new Set(all.map((p) => p.taskId))];
+  assert.equal(taskIds.length, 8, 'all eight tasks appear in the full dataset');
+  for (const p of all) {
     assert.ok(p.command.includes('"--thinking" "off"'), p.command);
     assert.ok(p.command.includes('"--session-dir"'), p.command);
     assert.ok(p.command.includes('mimo-v2.6-flash'), p.command);
     if (p.condition === 'A') assert.ok(!p.command.includes('--extension'), p.command);
     else assert.ok(p.command.includes('keeper-memory.ts'), p.command);
+    if (p.condition === 'D') assert.ok(p.command.includes('preview-extension.ts'), p.command);
+    else assert.ok(!p.command.includes('preview-extension.ts'), p.command);
   }
 });

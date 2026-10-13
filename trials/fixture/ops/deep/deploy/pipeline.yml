@@ -1,0 +1,9 @@
+stages:
+  - name: build
+    run: node --version
+  - name: test
+    run: npm test
+  - name: package
+    run: echo "packaging happens in the platform pipeline"
+  - name: deploy
+    environment: staging

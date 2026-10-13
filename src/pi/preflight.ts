@@ -155,7 +155,10 @@ export function preflightPreview(cwd: string, opts: PreviewOptions = {}): Previe
         if (prev === undefined || score > prev.score) scored.set(hit.id, { hit, score });
       }
     }
-    const ranked = [...scored.values()].sort((a, b) => b.score - a.score);
+    // Relevance floor: one shared word is noise (e.g. "file" matching an
+    // unrelated note); a previewed note must contain at least two distinct
+    // task terms. Below that, the preview stays silent via no-memory.
+    const ranked = [...scored.values()].filter((r) => r.score >= 2).sort((a, b) => b.score - a.score);
     if (ranked.length === 0) {
       // Explicit outcome: memory existed but nothing matched this task.
       const text = `${HEAD}\n\n${NO_MEMORY}`;
