@@ -190,34 +190,44 @@ export function preflightPreview(cwd: string, opts: PreviewOptions = {}): Previe
   }
 }
 
-/** Fence each hit with the existing formatter; never truncate mid-block. */
+/**
+ * Assemble head + advisory + whole fence blocks + note, never over maxChars.
+ * The cap covers the FINAL text, not just the blocks: head, advisory and the
+ * omission/unmatched note are all part of what lands in the prompt (the old
+ * accounting budgeted blocks only and could overrun by ~200 chars — caught
+ * by bats/sk-preview-budget-flood).
+ */
 function renderPreview(hits: SearchHit[], maxChars: number, wordQueries: WordQuery[]): string {
-  const budget = Math.max(64, maxChars - HEAD.length - 2);
-  const blocks = hits.map(formatHit);
-  const kept: string[] = [];
-  let used = 0;
-  let omitted = 0;
-  for (const block of blocks) {
-    const add = (kept.length === 0 ? '' : '\n\n') + block;
-    if (kept.length > 0 && used + add.length > budget) {
-      omitted++;
-      continue;
-    }
-    if (kept.length === 0 && block.length > budget) {
-      // First block always ships, hard-cut only on the formatter's own budget.
-      kept.push(block.slice(0, budget));
-      used = budget;
-      continue;
-    }
-    kept.push(block);
-    used += add.length;
-  }
-  const notes: string[] = [];
-  if (omitted > 0) notes.push(`${omitted} of ${blocks.length} matches omitted; preview capped at ${maxChars} chars`);
   const unmatched = wordQueries.filter((w) => w.hits === 0).map((w) => w.word);
-  if (unmatched.length > 0) {
-    notes.push(`task terms with no matches: ${unmatched.join(', ')}`);
+  const noteFor = (omitted: number): string => {
+    const notes: string[] = [];
+    if (omitted > 0) notes.push(`${omitted} of ${hits.length} matches omitted; preview capped at ${maxChars} chars`);
+    if (unmatched.length > 0) notes.push(`task terms with no matches: ${unmatched.join(', ')}`);
+    return notes.length > 0 ? `\n\n…[${notes.join('; ')}]` : '';
+  };
+  const prefix = `${HEAD}\n\n${ADVISORY_PREAMBLE}`;
+  let kept = hits.map(formatHit);
+  let omitted = 0;
+  const assemble = (): string => prefix + kept.map((b) => `\n\n${b}`).join('') + noteFor(omitted);
+  // Evict trailing WHOLE fence blocks until head + advisory + note fit too.
+  while (kept.length > 0 && assemble().length > maxChars) {
+    kept.pop();
+    omitted = hits.length - kept.length;
   }
-  const note = notes.length > 0 ? `\n\n…[${notes.join('; ')}]` : '';
-  return `${HEAD}\n\n${ADVISORY_PREAMBLE}\n\n${kept.join('\n\n')}${note}`;
+  // Nothing whole fits: shrink the first hit's snippet, never its fences.
+  if (kept.length === 0 && hits.length > 0) {
+    const first = hits[0];
+    for (const cap of [160, 80, 48, 0]) {
+      const snippet = first.snippet.length <= cap ? first.snippet : first.snippet.slice(0, cap);
+      kept = [formatHit({ ...first, snippet })];
+      omitted = hits.length - 1;
+      if (assemble().length <= maxChars) return assemble();
+      kept = [];
+    }
+    // Degenerate maxChars (below the fixed head + advisory): HEAD alone still
+    // carries the untrusted/verify/never-obey contract, so ship HEAD only.
+    omitted = hits.length;
+    return HEAD.length <= maxChars ? HEAD : HEAD.slice(0, Math.max(0, maxChars));
+  }
+  return assemble();
 }

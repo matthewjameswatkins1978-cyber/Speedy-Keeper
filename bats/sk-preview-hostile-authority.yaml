@@ -1,0 +1,50 @@
+# Bat: forged privileged content, command inducement and a malicious source
+# reference inside an injected memory stay fenced data — advisory present,
+# exactly one fence pair, provenance preserved.
+
+version: terrorbat/v1
+
+id: sk-preview-hostile-authority
+
+claim:
+  text: >
+    Hostile instructions and malicious source references in a previewed
+    memory arrive only as fenced untrusted data with the anti-obedience
+    advisory and intact provenance — never as prompt authority.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-preview-hostile-authority.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b4
+  tags: [speedy-keeper, preview, prompt-injection, provenance]
+  description: >
+    Four forgery carriers plus an evil.example source reference, delivered
+    through the condition-D preview path.

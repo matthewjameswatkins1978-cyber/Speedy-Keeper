@@ -24,6 +24,11 @@ const BATS = [
   'sk-save-confirmation',
   'sk-failure-messages',
   'sk-tool-descriptions',
+  // B4 Phase 7: the winning approach (condition-D preview) under attack.
+  'sk-preview-budget-flood',
+  'sk-preview-irrelevant-flood',
+  'sk-preview-hostile-authority',
+  'sk-preview-storage-failure',
 ];
 
 // Compiled tests run from dist/test/, so the repo root is two levels up.
