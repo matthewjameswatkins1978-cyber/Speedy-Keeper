@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"b3-sample","timestamp":"2026-10-13T00:00:00.000Z","cwd":"/tmp/b3-fixture"}
+{"type":"message","id":"m1","timestamp":"2026-10-13T00:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"I will search memory first."}]}}
+{"type":"message","id":"m2","timestamp":"2026-10-13T00:00:02.000Z","message":{"role":"toolcall","toolCallId":"call_1","toolName":"memory_search","args":{"query":"staging server port"}}}
+{"type":"message","id":"m3","timestamp":"2026-10-13T00:00:03.000Z","message":{"role":"toolresult","toolCallId":"call_1","toolName":"memory_search","content":[{"type":"text","text":"Memory advisory matches: 1"}],"usage":{"inputTokens":1200,"outputTokens":300}}}
+{"type":"message","id":"m4","timestamp":"2026-10-13T00:00:04.000Z","message":{"role":"toolcall","toolCallId":"call_2","toolName":"read","args":{"path":"rota-2026-10.md"}}}
+{"type":"message","id":"m5","timestamp":"2026-10-13T00:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"4821"}]},"usage":{"input_tokens":2000,"output_tokens":50}}
