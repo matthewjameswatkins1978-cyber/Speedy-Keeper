@@ -307,12 +307,22 @@ export class KeeperStore {
     this.dbPath = dbPath;
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
-    const timeout = Math.max(0, Math.floor(opts.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS));
-    // journal_mode returns a row, so read it via prepare; the rest are bare pragmas.
-    this.db.prepare('PRAGMA journal_mode = WAL').get();
-    this.db.exec(`PRAGMA busy_timeout = ${timeout}`);
-    this.db.exec('PRAGMA foreign_keys = ON');
-    this.db.exec(SCHEMA_SQL);
+    try {
+      const timeout = Math.max(0, Math.floor(opts.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS));
+      // journal_mode returns a row, so read it via prepare; the rest are bare pragmas.
+      this.db.prepare('PRAGMA journal_mode = WAL').get();
+      this.db.exec(`PRAGMA busy_timeout = ${timeout}`);
+      this.db.exec('PRAGMA foreign_keys = ON');
+      this.db.exec(SCHEMA_SQL);
+    } catch (err) {
+      // Never leak the file handle when setup fails (corrupt/unreadable db).
+      try {
+        this.db.close();
+      } catch {
+        /* close must not mask the original failure */
+      }
+      throw err;
+    }
   }
 
   close(): void {

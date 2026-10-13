@@ -23,7 +23,8 @@ const BATS = [
   'sk-pi-operational',
 ];
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Compiled tests run from dist/test/, so the repo root is two levels up.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 for (const id of BATS) {
   test(`terrorbat ${id}`, { timeout: 180000 }, () => {

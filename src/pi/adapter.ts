@@ -68,6 +68,8 @@ export interface MemoryToolDeps {
   disabled?: boolean;
   /** Model-facing search output cap in chars (default PI_SEARCH_MAX_CHARS). */
   searchMaxChars?: number;
+  /** SQLite busy timeout in ms for contended access (default 5000). */
+  busyTimeoutMs?: number;
 }
 
 export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
@@ -78,7 +80,7 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
       throw err;
     }
     try {
-      return new KeeperStore(resolveDbPath(cwd, deps.dbPath));
+      return new KeeperStore(resolveDbPath(cwd, deps.dbPath), { busyTimeoutMs: deps.busyTimeoutMs ?? 5000 });
     } catch (err) {
       const wrapped = new KeeperError(
         `memory-unavailable: cannot open the memory database (${err instanceof Error ? err.message : String(err)})`,
@@ -121,9 +123,17 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
           },
         };
       } catch (err) {
+        const busy =
+          err instanceof Error && /SQLITE_BUSY|database is locked/i.test(err.message)
+            ? { code: 'memory-busy', message: 'The memory database is busy with another writer; retry the call.' }
+            : null;
         if (err instanceof KeeperError) {
           const text = formatFailure(err.code, err.message);
           return { content: [{ type: 'text', text }], details: { ok: false, code: err.code, message: err.message } };
+        }
+        if (busy !== null) {
+          const text = formatFailure(busy.code, busy.message);
+          return { content: [{ type: 'text', text }], details: { ok: false, code: busy.code, message: busy.message } };
         }
         throw err;
       } finally {
@@ -164,6 +174,13 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
           const code = err instanceof KeeperError ? err.code : 'secret-rejected';
           const text = formatFailure(code, err.message);
           return { content: [{ type: 'text', text }], details: { ok: false, code, message: err.message } };
+        }
+        if (err instanceof Error && /SQLITE_BUSY|database is locked/i.test(err.message)) {
+          const text = formatFailure('memory-busy', 'The memory database is busy with another writer; retry the call.');
+          return {
+            content: [{ type: 'text', text }],
+            details: { ok: false, code: 'memory-busy', message: 'The memory database is busy; retry the call.' },
+          };
         }
         throw err;
       } finally {
