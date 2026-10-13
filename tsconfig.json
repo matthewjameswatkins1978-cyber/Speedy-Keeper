@@ -12,5 +12,5 @@
     "resolveJsonModule": false,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "pi-extension/**/*.ts"]
 }

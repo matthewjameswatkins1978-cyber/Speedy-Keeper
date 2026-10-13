@@ -70,6 +70,14 @@ transaction rollback, backup/restore, project isolation (incl. git worktree
 sharing) and secret rejection. Databases and fixtures live in the OS temp dir
 and `*.sqlite*` files are git-ignored.
 
+## B2 experiment (isolated Pi adapter, do not install)
+
+Branch `feat/b2-isolated-pi` carries an experimental Pi 1.1.0 adapter exposing
+only `memory_search` / `memory_save` over this core, with budgeted advisory
+output and shadow-mode-only pre-task retrieval. See
+docs/b2-isolation-report.md for measurements, production gates and the
+continue-as-experiment recommendation.
+
 ## Performance
 
 Measure on your machine before quoting numbers:
