@@ -4,4 +4,7 @@ dist/
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite-journal
+# keeper readable exports (`keeper export --out <name>`); never commit these
+keeper-export*.json
+*-keeper-export.json
 .env

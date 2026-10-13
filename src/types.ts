@@ -44,6 +44,33 @@ export interface SearchOptions {
   limit?: number;
   /** Ordinary search hides superseded records; pass true to include them. */
   includeSuperseded?: boolean;
+  /** Preview length per hit in characters. Default 280, clamped to 24..2000. */
+  snippetChars?: number;
+  /**
+   * Total output budget in characters across all returned hits.
+   * Hits accumulate until the next one would exceed the budget; the first
+   * hit is always returned. Default 12000, clamped to 256..200000.
+   */
+  maxChars?: number;
+}
+
+/**
+ * Compact search preview for model context: stable id, relevant metadata
+ * and source references, plus a short body excerpt. Never carries the full
+ * body — use `get(id)` for complete content.
+ */
+export interface SearchHit {
+  id: string;
+  kind: RecordKind;
+  title: string;
+  snippet: string;
+  taskScope: string | null;
+  sources: string[];
+  claimStatus: ClaimStatus;
+  revision: number;
+  supersededBy: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ExportOptions {

@@ -1,11 +1,15 @@
 /** Public surface of the memory core; kept minimal for the future Pi extension. */
-export type { ClaimStatus, ExportOptions, MemoryRecord, RecordKind, SaveInput, SearchOptions } from './types.js';
+export type { ClaimStatus, ExportOptions, MemoryRecord, RecordKind, SaveInput, SearchHit, SearchOptions } from './types.js';
 export {
   ConflictError,
+  DEFAULT_MAX_CHARS,
   DEFAULT_SEARCH_LIMIT,
+  DEFAULT_SNIPPET_CHARS,
   KeeperError,
   KeeperStore,
+  MAX_MAX_CHARS,
   MAX_SEARCH_LIMIT,
+  MAX_SNIPPET_CHARS,
   NotFoundError,
   ValidationError,
   type StoreOptions,

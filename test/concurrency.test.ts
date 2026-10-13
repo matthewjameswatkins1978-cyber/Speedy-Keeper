@@ -14,7 +14,7 @@ test('interleaved writers on two handles lose nothing', () => {
         a.save({ kind: 'decision', title: `a-${i} concurrent`, body: 'writer a' });
         b.save({ kind: 'decision', title: `b-${i} concurrent`, body: 'writer b' });
       }
-      const all = a.search('concurrent', { limit: 100 });
+      const all = a.search('concurrent', { limit: 100, maxChars: 200000 });
       assert.equal(all.length, 40);
       const ids = new Set(all.map((r) => r.id));
       assert.equal(ids.size, 40);

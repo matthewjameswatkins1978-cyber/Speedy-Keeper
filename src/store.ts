@@ -26,11 +26,16 @@ import type {
   MemoryRecord,
   RecordKind,
   SaveInput,
+  SearchHit,
   SearchOptions,
 } from './types.js';
 
 export const DEFAULT_SEARCH_LIMIT = 20;
 export const MAX_SEARCH_LIMIT = 100;
+export const DEFAULT_SNIPPET_CHARS = 280;
+export const MAX_SNIPPET_CHARS = 2000;
+export const DEFAULT_MAX_CHARS = 12000;
+export const MAX_MAX_CHARS = 200000;
 const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 
 export class KeeperError extends Error {
@@ -152,18 +157,65 @@ function validateInput(input: SaveInput): ValidatedInput {
 }
 
 /** Quote user text into a safe FTS5 AND query with prefix matching. */
-function toMatchQuery(query: string): string | null {
+function toMatchQuery(query: string): { match: string; tokens: string[] } | null {
   const tokens = query
     .split(/\s+/)
     .map((t) => t.replace(/^[*^():"]+|[*^():"]+$/g, '').trim())
     .filter((t) => t.length > 0)
     .slice(0, 32);
   if (tokens.length === 0) return null;
-  return tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ');
+  return {
+    match: tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' '),
+    tokens,
+  };
 }
 
 function escapeLike(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/**
+ * True only for recognised FTS query-syntax failures (bad MATCH syntax).
+ * Everything else — corruption ("disk image is malformed"), missing
+ * tables, I/O errors — must propagate to the caller, never trigger the
+ * LIKE fallback.
+ */
+function isFtsSyntaxError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  if (/disk image is malformed|cannot open|i\/o error|no such table|no such column/i.test(msg)) return false;
+  return /syntax error|unterminated string|unknown special query|fts5:/i.test(msg);
+}
+
+/** Short excerpt of `body`, centred on the first matched token when known. */
+function excerptFor(body: string, tokens: string[], cap: number): string {
+  if (body.length <= cap) return body;
+  const lower = body.toLowerCase();
+  let at = -1;
+  for (const t of tokens) {
+    const i = lower.indexOf(t.toLowerCase());
+    if (i >= 0 && (at < 0 || i < at)) at = i;
+  }
+  if (at < 0) return body.slice(0, cap).trimEnd() + '…';
+  const start = Math.max(0, at - Math.floor(cap / 3));
+  const window = body.slice(start, start + cap).trim();
+  return (start > 0 ? '…' : '') + window + (start + cap < body.length ? '…' : '');
+}
+
+function toSearchHit(rec: MemoryRecord, tokens: string[], snippetChars: number): SearchHit {
+  return {
+    id: rec.id,
+    kind: rec.kind,
+    title: rec.title,
+    snippet: excerptFor(rec.body, tokens, snippetChars),
+    taskScope: rec.taskScope,
+    sources: rec.sources,
+    claimStatus: rec.claimStatus,
+    revision: rec.revision,
+    supersededBy: rec.supersededBy,
+    createdAt: rec.createdAt,
+    updatedAt: rec.updatedAt,
+  };
 }
 
 function toRecord(row: Record<string, unknown>): MemoryRecord {
@@ -252,8 +304,23 @@ export class KeeperStore {
     return row === undefined ? null : toRecord(row);
   }
 
-  search(query: string, opts: SearchOptions = {}): MemoryRecord[] {
+  /**
+   * Ordinary search returns compact previews under a total character budget,
+   * not full records: at most `limit` hits and at most `maxChars` characters
+   * of JSON-encoded output (the first hit is always returned). Full content
+   * stays available through `get(id)`. Only recognised FTS query-syntax
+   * errors fall back to a bounded LIKE scan; any other failure propagates.
+   */
+  search(query: string, opts: SearchOptions = {}): SearchHit[] {
     const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? DEFAULT_SEARCH_LIMIT)), MAX_SEARCH_LIMIT);
+    const snippetChars = Math.min(
+      Math.max(24, Math.floor(opts.snippetChars ?? DEFAULT_SNIPPET_CHARS)),
+      MAX_SNIPPET_CHARS,
+    );
+    const maxChars = Math.min(
+      Math.max(256, Math.floor(opts.maxChars ?? DEFAULT_MAX_CHARS)),
+      MAX_MAX_CHARS,
+    );
     if (opts.kind !== undefined && !KINDS.includes(opts.kind)) {
       throw new ValidationError(`kind must be one of ${KINDS.join(', ')}`);
     }
@@ -269,34 +336,46 @@ export class KeeperStore {
       params.push(opts.taskScope);
     }
     const where = filters.length > 0 ? `AND ${filters.join(' AND ')}` : '';
+    const collect = (rows: Record<string, unknown>[], tokens: string[]): SearchHit[] => {
+      const hits: SearchHit[] = [];
+      let used = 0;
+      for (const row of rows) {
+        const hit = toSearchHit(toRecord(row), tokens, snippetChars);
+        const size = JSON.stringify(hit).length;
+        if (hits.length > 0 && used + size > maxChars) break;
+        hits.push(hit);
+        used += size;
+      }
+      return hits;
+    };
 
-    const match = toMatchQuery(query ?? '');
-    if (match === null) {
+    const parsed = toMatchQuery(query ?? '');
+    if (parsed === null) {
       // Empty/blank query: browse most recent first. Still bounded.
       const rows = this.db
         .prepare(`SELECT r.* FROM records r WHERE 1 = 1 ${where} ORDER BY r.rowid DESC LIMIT ?`)
         .all(...params, limit) as Record<string, unknown>[];
-      return rows.map(toRecord);
+      return collect(rows, []);
     }
+    let rows: Record<string, unknown>[];
     try {
-      const rows = this.db
+      rows = this.db
         .prepare(
           `SELECT r.* FROM records_fts f JOIN records r ON r.rowid = f.rowid ` +
             `WHERE records_fts MATCH ? ${where} ORDER BY rank LIMIT ?`,
         )
-        .all(match, ...params, limit) as Record<string, unknown>[];
-      return rows.map(toRecord);
-    } catch {
-      // Unparseable FTS query: fall back to a bounded LIKE scan.
+        .all(parsed.match, ...params, limit) as Record<string, unknown>[];
+    } catch (err) {
+      if (!isFtsSyntaxError(err)) throw err;
       const like = `%${escapeLike(query)}%`;
-      const rows = this.db
+      rows = this.db
         .prepare(
           `SELECT r.* FROM records r WHERE (r.title LIKE ? ESCAPE '\\' OR r.body LIKE ? ESCAPE '\\') ` +
             `${where} ORDER BY r.rowid DESC LIMIT ?`,
         )
         .all(like, like, ...params, limit) as Record<string, unknown>[];
-      return rows.map(toRecord);
     }
+    return collect(rows, parsed.tokens);
   }
 
   /**

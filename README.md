@@ -26,7 +26,8 @@ npm run build
 # save (database resolves via git; or --db <path> / SPEEDY_KEEPER_DB)
 node dist/src/cli.js save --kind decision --title "Use WAL mode" --body "Readers keep working during writes" --sources src/store.ts
 
-# search (JSON array; superseded hidden unless --include-superseded)
+# search (JSON array of previews: id, title, snippet, sources, metadata —
+# bounded by --limit and a total character budget; full bodies via get)
 node dist/src/cli.js search --query "wal mode" --limit 10
 
 # get one record
