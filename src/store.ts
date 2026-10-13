@@ -47,6 +47,9 @@ export class NotFoundError extends KeeperError {
 export class ConflictError extends KeeperError {
   code = 'revision-conflict';
 }
+export class BudgetError extends KeeperError {
+  code = 'budget-exceeded';
+}
 export class ValidationError extends KeeperError {
   code = 'validation';
 }
@@ -156,6 +159,15 @@ function validateInput(input: SaveInput): ValidatedInput {
   return { kind: input.kind, title, body, taskScope, sources, claimStatus };
 }
 
+function checkFiniteNumber(value: number | undefined, field: string, min: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ValidationError(`${field} must be a finite number`);
+  }
+  if (value < min) throw new ValidationError(`${field} must be >= ${min}`);
+  return Math.floor(value);
+}
+
 /** Quote user text into a safe FTS5 AND query with prefix matching. */
 function toMatchQuery(query: string): { match: string; tokens: string[] } | null {
   const tokens = query
@@ -175,16 +187,15 @@ function escapeLike(s: string): string {
 }
 
 /**
- * True only for recognised FTS query-syntax failures (bad MATCH syntax).
- * Everything else — corruption ("disk image is malformed"), missing
- * tables, I/O errors — must propagate to the caller, never trigger the
- * LIKE fallback.
+ * True only for recognised FTS query-syntax failures: malformed MATCH text
+ * supplied by the caller. Deliberately narrow — any other SQLite failure
+ * (corruption, missing tables/columns, I/O, or internal `fts5:` errors that
+ * are not query syntax) must propagate to the caller, never trigger the
+ * LIKE fallback. Exported so the narrowing is directly unit-testable.
  */
-function isFtsSyntaxError(err: unknown): boolean {
+export function isRecoverableFtsError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  const msg = err.message;
-  if (/disk image is malformed|cannot open|i\/o error|no such table|no such column/i.test(msg)) return false;
-  return /syntax error|unterminated string|unknown special query|fts5:/i.test(msg);
+  return /syntax error|unterminated string|unknown special query/i.test(err.message);
 }
 
 /** Short excerpt of `body`, centred on the first matched token when known. */
@@ -200,6 +211,47 @@ function excerptFor(body: string, tokens: string[], cap: number): string {
   const start = Math.max(0, at - Math.floor(cap / 3));
   const window = body.slice(start, start + cap).trim();
   return (start > 0 ? '…' : '') + window + (start + cap < body.length ? '…' : '');
+}
+
+function hitSize(hit: SearchHit): number {
+  return JSON.stringify(hit).length;
+}
+
+/**
+ * Reduce a preview until it fits `budget` characters: full snippet first,
+ * then progressively shorter snippets, then front-trimmed sources, then the
+ * minimum useful result (identity + title + metadata, no snippet/sources).
+ * Returns null when even the minimum cannot fit — the caller then raises a
+ * budget error (first hit) or stops accumulating (later hits).
+ */
+function fitHit(rec: MemoryRecord, tokens: string[], snippetCap: number, budget: number): SearchHit | null {
+  const full = toSearchHit(rec, tokens, snippetCap);
+  if (hitSize(full) <= budget) return full;
+  for (const cap of [160, 80, 48]) {
+    if (cap >= snippetCap) continue;
+    const reduced: SearchHit = { ...full, snippet: excerptFor(rec.body, tokens, cap) };
+    if (hitSize(reduced) <= budget) return reduced;
+  }
+  const short: SearchHit = {
+    ...full,
+    snippet: excerptFor(rec.body, tokens, Math.min(48, snippetCap)),
+  };
+  let kept = -1;
+  let lo = 0;
+  let hi = short.sources.length;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const candidate: SearchHit = { ...short, sources: short.sources.slice(0, mid) };
+    if (hitSize(candidate) <= budget) {
+      kept = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (kept >= 0) return { ...short, sources: short.sources.slice(0, kept) };
+  const minimal: SearchHit = { ...short, snippet: '', sources: [] };
+  return hitSize(minimal) <= budget ? minimal : null;
 }
 
 function toSearchHit(rec: MemoryRecord, tokens: string[], snippetChars: number): SearchHit {
@@ -305,22 +357,25 @@ export class KeeperStore {
   }
 
   /**
-   * Ordinary search returns compact previews under a total character budget,
-   * not full records: at most `limit` hits and at most `maxChars` characters
-   * of JSON-encoded output (the first hit is always returned). Full content
-   * stays available through `get(id)`. Only recognised FTS query-syntax
-   * errors fall back to a bounded LIKE scan; any other failure propagates.
+   * Ordinary search returns compact previews under a strict total character
+   * budget — no hit is ever returned over budget. At most `limit` hits and
+   * at most `maxChars` characters of JSON-encoded output; previews shrink
+   * (shorter snippet, fewer sources) to fit, and a `budget-exceeded` error
+   * is raised when even the minimum useful first hit cannot fit. Full
+   * records and complete sources stay available through `get(id)`. Only
+   * recognised FTS query-syntax errors fall back to a bounded LIKE scan;
+   * any other failure propagates.
    */
   search(query: string, opts: SearchOptions = {}): SearchHit[] {
-    const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? DEFAULT_SEARCH_LIMIT)), MAX_SEARCH_LIMIT);
+    const limit = Math.min(
+      checkFiniteNumber(opts.limit, 'limit', 1) ?? DEFAULT_SEARCH_LIMIT,
+      MAX_SEARCH_LIMIT,
+    );
     const snippetChars = Math.min(
-      Math.max(24, Math.floor(opts.snippetChars ?? DEFAULT_SNIPPET_CHARS)),
+      checkFiniteNumber(opts.snippetChars, 'snippetChars', 1) ?? DEFAULT_SNIPPET_CHARS,
       MAX_SNIPPET_CHARS,
     );
-    const maxChars = Math.min(
-      Math.max(256, Math.floor(opts.maxChars ?? DEFAULT_MAX_CHARS)),
-      MAX_MAX_CHARS,
-    );
+    const maxChars = Math.min(checkFiniteNumber(opts.maxChars, 'maxChars', 1) ?? DEFAULT_MAX_CHARS, MAX_MAX_CHARS);
     if (opts.kind !== undefined && !KINDS.includes(opts.kind)) {
       throw new ValidationError(`kind must be one of ${KINDS.join(', ')}`);
     }
@@ -340,11 +395,20 @@ export class KeeperStore {
       const hits: SearchHit[] = [];
       let used = 0;
       for (const row of rows) {
-        const hit = toSearchHit(toRecord(row), tokens, snippetChars);
-        const size = JSON.stringify(hit).length;
-        if (hits.length > 0 && used + size > maxChars) break;
+        const rec = toRecord(row);
+        const hit = fitHit(rec, tokens, snippetChars, maxChars - used);
+        if (hit === null) {
+          if (hits.length === 0) {
+            throw new BudgetError(
+              `budget-exceeded: record ${rec.id} cannot fit in ${maxChars} chars even as a ` +
+                `minimum preview (id, title and metadata); raise maxChars or read the full ` +
+                `record with get(id)`,
+            );
+          }
+          break;
+        }
         hits.push(hit);
-        used += size;
+        used += hitSize(hit);
       }
       return hits;
     };
@@ -366,7 +430,7 @@ export class KeeperStore {
         )
         .all(parsed.match, ...params, limit) as Record<string, unknown>[];
     } catch (err) {
-      if (!isFtsSyntaxError(err)) throw err;
+      if (!isRecoverableFtsError(err)) throw err;
       const like = `%${escapeLike(query)}%`;
       rows = this.db
         .prepare(
@@ -386,6 +450,7 @@ export class KeeperStore {
    */
   supersede(oldId: string, input: SaveInput, expectedRevision?: number): { old: MemoryRecord; current: MemoryRecord } {
     const v = validateInput(input);
+    const wantRevision = checkFiniteNumber(expectedRevision, 'expectedRevision', 1);
     return this.transaction(() => {
       const row = this.db.prepare('SELECT * FROM records WHERE id = ?').get(oldId) as
         | Record<string, unknown>
@@ -395,9 +460,9 @@ export class KeeperStore {
       if (old.supersededBy !== null) {
         throw new ConflictError(`record ${oldId} was already superseded by ${old.supersededBy}`);
       }
-      if (expectedRevision !== undefined && old.revision !== expectedRevision) {
+      if (wantRevision !== undefined && old.revision !== wantRevision) {
         throw new ConflictError(
-          `revision conflict on ${oldId}: expected ${expectedRevision}, found ${old.revision}`,
+          `revision conflict on ${oldId}: expected ${wantRevision}, found ${old.revision}`,
         );
       }
       const current = this.insertRecord(v);

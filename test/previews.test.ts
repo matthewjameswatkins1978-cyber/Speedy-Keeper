@@ -55,7 +55,7 @@ test('snippets centre on the match and respect snippetChars', () => {
   }
 });
 
-test('maxChars caps total output but always returns the first hit', () => {
+test('maxChars is a strict bound: previews shrink so the total always fits', () => {
   const t = tempDb('previews');
   try {
     const store = new KeeperStore(t.db);
@@ -66,11 +66,13 @@ test('maxChars caps total output but always returns the first hit', () => {
       const full = store.search('budget', { limit: 100, maxChars: 200000 });
       assert.equal(full.length, 5);
       const capped = store.search('budget', { limit: 100, maxChars: 800 });
-      assert.ok(capped.length >= 1, 'first hit must survive any budget');
-      assert.ok(capped.length < 5, 'budget must cut the tail');
-      const [, ...tail] = capped;
-      const tailSize = tail.reduce((n, h) => n + JSON.stringify(h).length, 0);
-      assert.ok(tailSize <= 800, `tail exceeded budget: ${tailSize}`);
+      assert.ok(capped.length >= 1, 'first hit must survive any viable budget');
+      const total = capped.reduce((n, h) => n + JSON.stringify(h).length, 0);
+      assert.ok(total <= 800, `total ${total} exceeded budget 800`);
+      for (const h of capped) assert.ok(JSON.stringify(h).length <= 800);
+      // Reduction actually happened: capped output is smaller than unbounded.
+      const fullTotal = full.reduce((n, h) => n + JSON.stringify(h).length, 0);
+      assert.ok(total < fullTotal);
     } finally {
       store.close();
     }
