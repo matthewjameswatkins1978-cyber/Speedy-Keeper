@@ -59,7 +59,7 @@ test('dry run plans 6 isolated live calls with the right shape', async () => {
   for (const p of plans) {
     assert.ok(p.command.includes('"--thinking" "off"'), p.command);
     assert.ok(p.command.includes('"--session-dir"'), p.command);
-    assert.ok(p.command.includes('gemini-flash-lite-latest'), p.command);
+    assert.ok(p.command.includes('mimo-v2.6-flash'), p.command);
     if (p.condition === 'with') assert.ok(p.command.includes('keeper-memory.ts'), p.command);
     else assert.ok(!p.command.includes('--extension'), p.command);
   }

@@ -37,9 +37,9 @@ justify its token/latency overhead, without compromising safety?
 
 ## Live-call proposal
 
-- **Model:** `google/gemini-flash-lite-latest`, `--thinking off`
-  (readiness verified: `pi auth check --no-refresh` → ready; fallback, also
-  ready: `deepseek/deepseek-flash`). Lite-tier, 1M context, tool-capable.
+- **Model:** `xiaomi-token-plan-ams/mimo-v2.6-flash`, `--thinking off`
+  (readiness verified: `pi auth check --no-refresh` → ready; fallbacks, also
+  ready: `google/gemini-flash-lite-latest`, `deepseek/deepseek-flash`).
 - **Calls:** 6 (`T1/with, T1/without, T2/with, T2/without, T3/with,
   T3/without`), 180s timeout each.
 - **Cost cap: $0.25 total, hard.** Prices are not verifiable offline, so the

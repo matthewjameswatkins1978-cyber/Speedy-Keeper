@@ -1,5 +1,5 @@
 {
-  "model": "google/gemini-flash-lite-latest",
+  "model": "xiaomi-token-plan-ams/mimo-v2.6-flash",
   "thinking": "off",
   "timeoutSeconds": 180,
   "tokenCeilingPerRun": 40000,
