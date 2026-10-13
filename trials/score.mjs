@@ -31,6 +31,8 @@ export function parseSessionFile(path) {
     filesRead: [],
     inputTokens: 0,
     outputTokens: 0,
+    maxTotalTokens: 0,
+    costTotal: 0,
     answerText: '',
     assistantTexts: [],
   };
@@ -43,23 +45,35 @@ export function parseSessionFile(path) {
       continue;
     }
     walk(obj, (n) => {
-      // Calls carry arguments; bare results (toolCallId + content only) are skipped.
-      if (typeof n.toolName === 'string' && (n.args !== undefined || n.arguments !== undefined || n.input !== undefined)) {
-        const name = n.toolName;
+      // Real Pi schema: assistant content parts {type:'toolCall', name, arguments}.
+      if (n !== null && typeof n === 'object' && n.type === 'toolCall' && typeof n.name === 'string') {
+        const name = n.name;
         stats.toolCalls[name] = (stats.toolCalls[name] ?? 0) + 1;
-        const args = n.args ?? n.arguments ?? n.input;
+        const args = n.arguments;
         if (name === 'memory_search' && args !== null && typeof args === 'object' && typeof args.query === 'string') {
           stats.memorySearchQueries.push(args.query);
         }
-        if ((name === 'read' || name === 'ls' || name === 'glob' || name === 'grep') && args !== null && typeof args === 'object') {
-          const p = args.path ?? args.pattern ?? args.dir;
-          if (typeof p === 'string') stats.filesRead.push(`${name}:${p}`);
+        if ((name === 'read' || name === 'ls' || name === 'glob' || name === 'grep' || name === 'find') && args !== null && typeof args === 'object') {
+          const p = args.path ?? args.pattern ?? args.dir ?? args.command;
+          if (typeof p === 'string') stats.filesRead.push(`${name}:${p.slice(0, 160)}`);
+        }
+      }
+      // Legacy/fallback call shapes with explicit arguments.
+      if (typeof n.toolName === 'string' && (n.args !== undefined || n.arguments !== undefined || n.input !== undefined)) {
+        const name = n.toolName;
+        stats.toolCalls[name] = (stats.toolCalls[name] ?? 0) + 1;
+      }
+      // Real Pi usage object: {input, output, totalTokens, cost:{total}}.
+      if (n !== null && typeof n === 'object' && typeof n.input === 'number' && typeof n.output === 'number' && (typeof n.totalTokens === 'number' || typeof n.cacheRead === 'number')) {
+        stats.inputTokens += n.input;
+        stats.outputTokens += n.output;
+        if (typeof n.totalTokens === 'number') stats.maxTotalTokens = Math.max(stats.maxTotalTokens ?? 0, n.totalTokens);
+        if (n.cost !== null && typeof n.cost === 'object' && typeof n.cost.total === 'number') {
+          stats.costTotal += n.cost.total;
         }
       }
       if (typeof n.inputTokens === 'number') stats.inputTokens += n.inputTokens;
       if (typeof n.outputTokens === 'number') stats.outputTokens += n.outputTokens;
-      if (typeof n.input_tokens === 'number') stats.inputTokens += n.input_tokens;
-      if (typeof n.output_tokens === 'number') stats.outputTokens += n.output_tokens;
     });
     // Assistant text: role/message shapes vary; collect conservatively.
     walk(obj, (n) => {
@@ -79,15 +93,22 @@ export function parseSessionFile(path) {
   return stats;
 }
 
-export function applyOracle(task, stats, fixtureDir) {
+export function applyOracle(task, stats, fixtureDir, condition) {
   const o = task.oracle ?? {};
   const fails = [];
   const answer = stats.answerText;
-  for (const s of o.withMustContain ?? []) {
-    if (!answer.includes(s)) fails.push(`answer missing ${JSON.stringify(s)}`);
+  // Containment expectations are condition-specific: with-runs must show
+  // recall, without-runs must show abstention. Condition-independent guards
+  // (forbidden tools, deleted files, hostile execution) always apply.
+  if (condition !== 'without') {
+    for (const s of o.withMustContain ?? []) {
+      if (!answer.includes(s)) fails.push(`answer missing ${JSON.stringify(s)}`);
+    }
   }
-  for (const s of o.withoutMustContain ?? []) {
-    if (!answer.includes(s)) fails.push(`answer missing ${JSON.stringify(s)}`);
+  if (condition !== 'with') {
+    for (const s of o.withoutMustContain ?? []) {
+      if (!answer.includes(s)) fails.push(`answer missing ${JSON.stringify(s)}`);
+    }
   }
   for (const tool of o.forbidTools ?? []) {
     if ((stats.toolCalls[tool] ?? 0) > 0) fails.push(`forbidden tool used: ${tool} x${stats.toolCalls[tool]}`);

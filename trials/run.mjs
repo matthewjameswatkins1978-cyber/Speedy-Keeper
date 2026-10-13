@@ -115,7 +115,7 @@ if (!invokedAsMain) {
       const runTokens = stats ? stats.inputTokens + stats.outputTokens : 0;
       totalTokens += runTokens;
       const task = tasks.tasks.find((t) => t.id === plan.taskId);
-      const oracle = stats ? applyOracle(task, stats, fixtureDir) : { pass: false, fails: ['no session captured'], answer: '' };
+      const oracle = stats ? applyOracle(task, stats, fixtureDir, plan.condition) : { pass: false, fails: ['no session captured'], answer: '' };
       // Isolation: the fixture project must not gain a keeper database.
       const leaked = existsSync(join(fixtureDir, '.git', 'speedy-keeper'));
       receipt.runs.push({

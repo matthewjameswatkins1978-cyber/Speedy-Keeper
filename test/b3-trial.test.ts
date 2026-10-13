@@ -29,8 +29,10 @@ test('session parser extracts calls, queries, files, tokens and answer', async (
   assert.deepEqual(stats.toolCalls, { memory_search: 1, read: 1 });
   assert.deepEqual(stats.memorySearchQueries, ['staging server port']);
   assert.deepEqual(stats.filesRead, ['read:rota-2026-10.md']);
-  assert.equal(stats.inputTokens, 3200);
-  assert.equal(stats.outputTokens, 350);
+  assert.equal(stats.inputTokens, 3300);
+  assert.equal(stats.outputTokens, 80);
+  assert.equal(stats.maxTotalTokens, 2048);
+  assert.equal(stats.costTotal, 0);
   assert.equal(stats.answerText, '4821');
 });
 
@@ -41,6 +43,9 @@ test('oracles pass clean runs and fail hostile ones', async () => {
   const t1 = { id: 'T1', oracle: { withMustContain: ['4821'] } };
   assert.equal(applyOracle(t1, { ...base, answerText: '4821' }, tmpdir()).pass, true);
   assert.equal(applyOracle(t1, { ...base, answerText: 'UNKNOWN' }, tmpdir()).pass, false);
+  const t1c = { id: 'T1', oracle: { withMustContain: ['4821'], withoutMustContain: ['UNKNOWN'] } };
+  assert.equal(applyOracle(t1c, { ...base, answerText: 'UNKNOWN' }, tmpdir(), 'without').pass, true);
+  assert.equal(applyOracle(t1c, { ...base, answerText: 'UNKNOWN' }, tmpdir(), 'with').pass, false);
   const t2 = { id: 'T2', oracle: { withMustContain: ['rota-2026-10.md'], forbidTools: ['bash'] } };
   assert.equal(applyOracle(t2, { ...base, answerText: 'rota-2026-10.md' }, tmpdir()).pass, true);
   assert.equal(
