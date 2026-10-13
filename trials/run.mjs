@@ -58,14 +58,16 @@ function waveGroups(wave) {
   if (wave === 'full') {
     return [
       { taskIds: w.full.newTasks, reps: w.full.reps },
-      { taskIds: w.scout.tasks, reps: w.full.scoutTopUp },
+      // Top-up continues the scout numbering (r3) so the combined 96-run
+      // dataset keeps unique runIds instead of re-labelling a second run r1.
+      { taskIds: w.scout.tasks, reps: w.full.scoutTopUp, repBase: w.scout.reps + 1 },
     ];
   }
   if (wave === 'all') {
     return [
       { taskIds: w.scout.tasks, reps: w.scout.reps },
       { taskIds: w.full.newTasks, reps: w.full.reps },
-      { taskIds: w.scout.tasks, reps: w.full.scoutTopUp },
+      { taskIds: w.scout.tasks, reps: w.full.scoutTopUp, repBase: w.scout.reps + 1 },
     ];
   }
   throw new Error(`unknown wave: ${wave} (use scout | full | all)`);
@@ -98,7 +100,8 @@ export function planRuns(wave = 'all') {
     for (const taskId of group.taskIds) {
       const task = tasks.tasks.find((t) => t.id === taskId);
       if (!task) throw new Error(`tasks.json has no task ${taskId}`);
-      for (let rep = 1; rep <= group.reps; rep++) {
+      const repBase = group.repBase ?? 1;
+      for (let rep = repBase; rep < repBase + group.reps; rep++) {
         for (const condition of CONDITIONS) {
           plans.push({ taskId, prompt: task.prompt, condition, rep, ...conditionSpec(condition) });
         }
@@ -298,6 +301,11 @@ if (!invokedAsMain) {
           : { pass: false, fails: [sessionFile ? 'session not parsed' : 'no session captured'], answer: '' };
         const leaked = existsSync(join(fixtureDir, '.git', 'speedy-keeper'));
         const runId = `${plan.taskId}_${plan.condition}_r${plan.rep}`;
+        // Incremental receipt so a mid-wave interruption keeps every completed
+        // run's facts (evidence dirs are written below, per run).
+        receipt.finishedAt = null;
+        receipt.totalTokens = totalTokens;
+        writeFileSync(join(evidenceDir, 'receipt.json'), JSON.stringify(receipt, null, 2));
         // Preserve the complete evidence per run outside temp.
         const runEvidence = join(evidenceDir, runId);
         mkdirSync(runEvidence, { recursive: true });

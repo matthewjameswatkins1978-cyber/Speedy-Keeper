@@ -69,6 +69,10 @@ test('dry run plans 96 isolated live calls across waves with the right shape', a
   assert.equal(scout.length, 32, 'scout: 4 tasks × 4 conditions × 2 reps');
   assert.equal(full.length, 64, 'full: 4 new × 4 × 3 + scout top-up 4 × 4 × 1');
   assert.equal(all.length, 96, 'complete matrix');
+  const runId = (p: { taskId: string; condition: string; rep?: number }): string =>
+    `${p.taskId}_${p.condition}_r${p.rep}`;
+  assert.equal(new Set(full.map(runId)).size, 64, 'full-wave runIds must be unique (top-up continues at r3)');
+  assert.equal(new Set(all.map(runId)).size, 96, 'merged dataset must not re-label any run');
   const conds = [...new Set(all.map((p) => p.condition))].sort();
   assert.deepEqual(conds, ['A', 'B', 'C', 'D']);
   const taskIds = [...new Set(all.map((p) => p.taskId))];
