@@ -16,12 +16,17 @@ import type { ExtensionAPI } from './pi-types.js';
 export default function (pi: ExtensionAPI): void {
   if (process.env['SPEEDY_KEEPER_DISABLED'] === '1') return;
   const dbPath = process.env['SPEEDY_KEEPER_DB']?.trim() || undefined;
-  for (const tool of createMemoryTools({ dbPath })) {
+  // B4 condition C/D discovery hint is opt-in via SPEEDY_KEEPER_HINT (trial
+  // env only): condition B stays exactly "the two tools, no prompt changes".
+  const hint = process.env['SPEEDY_KEEPER_HINT'] === '1';
+  for (const tool of createMemoryTools({ dbPath, hint })) {
     pi.registerTool({
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
       annotations: tool.annotations,
+      promptSnippet: tool.promptSnippet,
+      promptGuidelines: tool.promptGuidelines,
       execute: (id, params, signal, onUpdate, ctx) =>
         tool.execute(id, params as never, signal, onUpdate, ctx === undefined ? undefined : { cwd: ctx.cwd }),
     });

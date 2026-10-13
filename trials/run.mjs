@@ -1,7 +1,16 @@
 /**
- * B3 trial runner. Disposable everything: temp fixture copy, temp database,
- * temp session dir. With-runs load the extension via explicit `-e` only;
- * without-runs omit it. NOTHING is installed, configured or merged.
+ * B4 trial harness: four conditions over identical disposable runs.
+ *
+ *   A baseline  — plain Pi, no extension
+ *   B voluntary — keeper-memory.ts registers the two tools only
+ *   C discovery — B plus SPEEDY_KEEPER_HINT=1, which switches on the adapter's
+ *                promptSnippet/promptGuidelines (the discovery hint)
+ *   D selective — C plus the harness-only pre-task preview extension,
+ *                 which is inert unless SPEEDY_KEEPER_PREVIEW=1
+ *
+ * Conditions are expressed as env + explicit `-e` flags only; nothing is
+ * installed, configured or merged. `pi list` is snapshotted around the run
+ * and must be byte-identical afterwards.
  *
  *   node trials/run.mjs --dry-run        print the planned live calls, run nothing
  *   node trials/run.mjs --execute        perform the approved live-model calls
@@ -22,13 +31,23 @@ const invokedAsMain =
   typeof process.argv[1] === 'string' &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 const mode = process.argv[2] ?? '--dry-run';
-const CONDITIONS = ['with', 'without'];
+
+/** B4 conditions, in the order the packet defines them. */
+const CONDITIONS = ['A', 'B', 'C', 'D'];
+
+function conditionSpec(condition) {
+  if (condition === 'A') return { keeper: false, preview: false, hint: false, seeded: false };
+  if (condition === 'B') return { keeper: true, preview: false, hint: false, seeded: true };
+  if (condition === 'C') return { keeper: true, preview: false, hint: true, seeded: true };
+  if (condition === 'D') return { keeper: true, preview: true, hint: true, seeded: true };
+  throw new Error(`unknown condition: ${condition}`);
+}
 
 function planRuns() {
   const plans = [];
   for (const task of tasks.tasks) {
     for (const condition of CONDITIONS) {
-      plans.push({ taskId: task.id, prompt: task.prompt, condition });
+      plans.push({ taskId: task.id, prompt: task.prompt, condition, ...conditionSpec(condition) });
     }
   }
   return plans;
@@ -46,9 +65,8 @@ function buildCommand(plan, paths) {
     paths.sessionDir,
     '--offline',
   ];
-  if (plan.condition === 'with') {
-    toolArgs.push('--extension', join(root, 'pi-extension', 'keeper-memory.ts'));
-  }
+  if (plan.keeper) toolArgs.push('--extension', join(root, 'pi-extension', 'keeper-memory.ts'));
+  if (plan.preview) toolArgs.push('--extension', join(root, 'trials', 'preview-extension.ts'));
   // pi ships as a .cmd shim on Windows: spawn through cmd there.
   const shell = process.platform === 'win32';
   return {
@@ -87,7 +105,7 @@ if (!invokedAsMain) {
     process.exit(2);
   }
   const { parseSessionFile, applyOracle, findSessionFile } = await import('./score.mjs');
-  const base = mkdtempSync(join(tmpdir(), 'b3-trial-'));
+  const base = mkdtempSync(join(tmpdir(), 'b4-trial-'));
   const receipt = { startedAt: new Date().toISOString(), model: tasks.model, runs: [], settingsBefore: '', settingsAfter: '' };
   try {
     receipt.settingsBefore = piList();
@@ -100,11 +118,21 @@ if (!invokedAsMain) {
       mkdirSync(sessionDir, { recursive: true });
       const db = join(runDir, 'memory.sqlite');
       const env = { ...process.env };
-      if (plan.condition === 'with') {
+      // Start every run from exactly the environment the condition defines.
+      delete env['SPEEDY_KEEPER_DB'];
+      delete env['SPEEDY_KEEPER_DISABLED'];
+      delete env['SPEEDY_KEEPER_PREVIEW'];
+      delete env['SPEEDY_KEEPER_PREVIEW_LOG'];
+      delete env['SPEEDY_KEEPER_HINT'];
+      if (plan.seeded) {
         execFileSync(process.execPath, [join(root, 'trials', 'seed.mjs'), db], { timeout: 60000 });
         env['SPEEDY_KEEPER_DB'] = db;
-      } else {
-        delete env['SPEEDY_KEEPER_DB'];
+      }
+      // Condition C/D discovery hint: env-only so C's command equals B's.
+      if (plan.hint) env['SPEEDY_KEEPER_HINT'] = '1';
+      if (plan.preview) {
+        env['SPEEDY_KEEPER_PREVIEW'] = '1';
+        env['SPEEDY_KEEPER_PREVIEW_LOG'] = join(runDir, 'preview.jsonl');
       }
       const cmd = buildCommand(plan, { sessionDir, fixtureDir });
       const t0 = Date.now();
@@ -115,7 +143,13 @@ if (!invokedAsMain) {
       const runTokens = stats ? stats.inputTokens + stats.outputTokens : 0;
       totalTokens += runTokens;
       const task = tasks.tasks.find((t) => t.id === plan.taskId);
-      const oracle = stats ? applyOracle(task, stats, fixtureDir, plan.condition) : { pass: false, fails: ['no session captured'], answer: '' };
+      const oracle = stats
+        ? applyOracle(task, stats, fixtureDir, plan.seeded ? 'with' : 'without')
+        : { pass: false, fails: ['no session captured'], answer: '' };
+      const previewLog = env['SPEEDY_KEEPER_PREVIEW_LOG'];
+      const previewEntries = previewLog && existsSync(previewLog)
+        ? readFileSync(previewLog, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+        : [];
       // Isolation: the fixture project must not gain a keeper database.
       const leaked = existsSync(join(fixtureDir, '.git', 'speedy-keeper'));
       receipt.runs.push({
@@ -126,9 +160,16 @@ if (!invokedAsMain) {
         tokens: runTokens,
         stats,
         oracle,
-        isolation: { projectDbLeaked: leaked, dbPath: plan.condition === 'with' ? db : null },
+        preview: previewEntries,
+        isolation: { projectDbLeaked: leaked, dbPath: plan.seeded ? db : null },
       });
       if (leaked) throw new Error(`isolation breach in ${plan.taskId}/${plan.condition}: project database created`);
+      if (plan.condition === 'D' && previewEntries.length !== 1) {
+        throw new Error(`preview wiring failure in ${plan.taskId}/D: expected 1 preview entry, saw ${previewEntries.length}`);
+      }
+      if (plan.condition !== 'D' && previewEntries.length !== 0) {
+        throw new Error(`preview leaked outside condition D in ${plan.taskId}/${plan.condition}`);
+      }
       if (totalTokens > tasks.tokenCeilingTotal) throw new Error(`token ceiling exceeded (${totalTokens}), aborting trial`);
     }
     receipt.settingsAfter = piList();

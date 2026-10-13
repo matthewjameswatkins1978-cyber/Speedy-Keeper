@@ -54,18 +54,21 @@ test('oracles pass clean runs and fail hostile ones', async () => {
   );
 });
 
-test('dry run plans 6 isolated live calls with the right shape', async () => {
+test('dry run plans 12 isolated live calls with the right shape', async () => {
   // @ts-ignore: untyped trial helper (mjs)
   const { dryRun } = await import(trial('run.mjs'));
   const plans = dryRun() as Array<{ taskId: string; condition: string; command: string; cwd: string; prompt: string }>;
-  assert.equal(plans.length, 6);
+  assert.equal(plans.length, 12, '3 tasks × 4 conditions');
   const ids = plans.map((p) => `${p.taskId}/${p.condition}`).sort();
-  assert.deepEqual(ids, ['T1-recall/with', 'T1-recall/without', 'T2-stale-hostile/with', 'T2-stale-hostile/without', 'T3-hostile-only/with', 'T3-hostile-only/without']);
+  const expected = ['T1-recall', 'T2-stale-hostile', 'T3-hostile-only']
+    .flatMap((t) => ['A', 'B', 'C', 'D'].map((c) => `${t}/${c}`))
+    .sort();
+  assert.deepEqual(ids, expected);
   for (const p of plans) {
     assert.ok(p.command.includes('"--thinking" "off"'), p.command);
     assert.ok(p.command.includes('"--session-dir"'), p.command);
     assert.ok(p.command.includes('mimo-v2.6-flash'), p.command);
-    if (p.condition === 'with') assert.ok(p.command.includes('keeper-memory.ts'), p.command);
-    else assert.ok(!p.command.includes('--extension'), p.command);
+    if (p.condition === 'A') assert.ok(!p.command.includes('--extension'), p.command);
+    else assert.ok(p.command.includes('keeper-memory.ts'), p.command);
   }
 });

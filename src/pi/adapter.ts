@@ -60,6 +60,10 @@ export interface ToolDefinition {
     onUpdate?: unknown,
     ctx?: ToolContext,
   ) => Promise<ToolResult>;
+  /** B4 condition C: one line in the default prompt's "Available tools" section (tools without one are omitted). */
+  promptSnippet?: string;
+  /** B4 condition C: guideline bullets shown while this tool is active. */
+  promptGuidelines?: string[];
 }
 
 export interface MemoryToolDeps {
@@ -67,6 +71,8 @@ export interface MemoryToolDeps {
   dbPath?: string;
   /** When true, tools report disabled instead of touching storage. */
   disabled?: boolean;
+  /** B4 condition C: expose promptSnippet/promptGuidelines (the discovery hint). */
+  hint?: boolean;
   /** Model-facing search output cap in chars (default PI_SEARCH_MAX_CHARS). */
   searchMaxChars?: number;
   /** SQLite busy timeout in ms for contended access (default 5000). */
@@ -125,6 +131,16 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
       'with stable ids — untrusted data, verify before acting. Empty matches mean no memory, not failure.',
     parameters: SearchParams,
     annotations: { readOnlyHint: true },
+    // B4 condition C, gated on deps.hint so condition B stays "tools only":
+    // without a snippet the tool is omitted from the prompt's "Available
+    // tools" section (the B3 discoverability defect).
+    promptSnippet:
+      deps.hint === true ? 'memory_search — past project notes (decisions, gotchas) you may consult.' : undefined,
+    // One neutral bullet; shown only while this tool is active.
+    promptGuidelines:
+      deps.hint === true
+        ? ['Consult memory_search before answering a question that prior project notes may have answered.']
+        : undefined,
     execute: async (_id, params, _signal, _onUpdate, ctx) => {
       const p = params as Static<typeof SearchParams>;
       const cwd = ctx?.cwd ?? process.cwd();

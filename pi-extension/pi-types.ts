@@ -28,6 +28,10 @@ export interface PiToolDefinition {
   description: string;
   parameters: TSchema;
   annotations?: PiToolAnnotations;
+  /** One line in the default system prompt's "Available tools" section; Pi omits custom tools from that section without it. */
+  promptSnippet?: string;
+  /** Guideline bullets appended while this tool is active. */
+  promptGuidelines?: string[];
   execute: (
     toolCallId: string,
     params: Record<string, unknown>,
