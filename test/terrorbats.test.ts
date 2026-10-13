@@ -21,6 +21,9 @@ const BATS = [
   'sk-runtime-crash',
   'sk-runtime-no-hooks',
   'sk-pi-operational',
+  'sk-save-confirmation',
+  'sk-failure-messages',
+  'sk-tool-descriptions',
 ];
 
 // Compiled tests run from dist/test/, so the repo root is two levels up.

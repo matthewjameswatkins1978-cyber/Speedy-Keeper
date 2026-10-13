@@ -1,0 +1,50 @@
+# Bat: every tool failure mode is exercised with hostile inputs. No
+# attacker-controlled string or machine path may appear in error responses;
+# errors keep a fixed shape distinct from empty results.
+
+version: terrorbat/v1
+
+id: sk-failure-messages
+
+claim:
+  text: >
+    Failure responses never echo attacker-controlled strings or machine
+    paths, and keep a fixed shape distinct from empty results.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-failure-messages.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.2
+  tags: [speedy-keeper, errors, failure-isolation]
+  description: >
+    Hostile corpus across validation, secret, budget, disabled,
+    unavailable (hostile path segment) and busy failures; absolute paths
+    must redact to role names.

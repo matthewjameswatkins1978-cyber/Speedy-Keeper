@@ -73,11 +73,12 @@ export function formatSearchResults(hits: SearchHit[], maxChars: number = PI_TOO
 }
 
 export function formatSaveResult(rec: MemoryRecord): string {
+  // Confirmations carry identifiers only — never stored text. Titles and
+  // bodies are untrusted data and stay behind get(id)/memory_search.
   return [
     ADVISORY_PREAMBLE,
     `saved ${rec.kind} ${rec.id} (revision ${rec.revision}, status ${rec.claimStatus}).`,
-    `title: ${rec.title}`,
-    'Retrieve it later with memory_search; full content via the record id.',
+    'Find it later with memory_search; tools see budgeted previews only.',
   ].join('\n');
 }
 

@@ -8,6 +8,7 @@
 import { Type, type Static } from 'typebox';
 import { KeeperError, KeeperStore } from '../store.js';
 import { resolveDbPath } from '../paths.js';
+import { dirname, resolve as resolvePath } from 'node:path';
 import type { RecordKind } from '../types.js';
 import { PI_SEARCH_MAX_CHARS, estimateTokens } from './budgets.js';
 import { formatFailure, formatSaveResult, formatSearchResults } from './format.js';
@@ -79,14 +80,41 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
       err.code = 'memory-disabled';
       throw err;
     }
-    try {
-      return new KeeperStore(resolveDbPath(cwd, deps.dbPath), { busyTimeoutMs: deps.busyTimeoutMs ?? 5000 });
-    } catch (err) {
-      const wrapped = new KeeperError(
-        `memory-unavailable: cannot open the memory database (${err instanceof Error ? err.message : String(err)})`,
-      );
+    const redact = (message: string, values: string[]): string => {
+      // Longest first: an exact full-path match must win over its cwd prefix.
+      const ordered = [...new Set(values)].filter((v) => v !== '').sort((a, b) => b.length - a.length);
+      let out = message;
+      for (const v of ordered) out = out.split(v).join(v === cwd ? '<cwd>' : '<memory-db>');
+      return out;
+    };
+    // Every location the opener may name: cwd, the configured database path
+    // and its parent (mkdir/open errors name either form).
+    const locations = (): string[] => {
+      const out = [cwd];
+      const raw = deps.dbPath?.trim() ? deps.dbPath!.trim() : process.env['SPEEDY_KEEPER_DB']?.trim();
+      if (raw) {
+        const abs = resolvePath(cwd, raw);
+        out.push(abs, dirname(abs));
+      }
+      return out;
+    };
+    const unavailable = (message: string): KeeperError => {
+      const wrapped = new KeeperError(message);
       wrapped.code = 'memory-unavailable';
-      throw wrapped;
+      return wrapped;
+    };
+    let dbPath: string;
+    try {
+      dbPath = resolveDbPath(cwd, deps.dbPath);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      throw unavailable(`memory-unavailable: cannot locate the memory database (${redact(raw, locations())})`);
+    }
+    try {
+      return new KeeperStore(dbPath, { busyTimeoutMs: deps.busyTimeoutMs ?? 5000 });
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      throw unavailable(`memory-unavailable: cannot open the memory database (${redact(raw, [dbPath, ...locations()])})`);
     }
   };
 
@@ -146,7 +174,7 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
     name: 'memory_save',
     description:
       'Store one concise Speedy Keeper note (decision, gotcha or checkpoint). Summarise; never store secrets or ' +
-      'raw tool output. New records are provisional unless evidence sources are supplied.',
+      'raw tool output. Records stored through this tool are always provisional; the tools cannot mark records evidenced.',
     parameters: SaveParams,
     annotations: { readOnlyHint: false },
     execute: async (_id, params, _signal, _onUpdate, ctx) => {
@@ -166,7 +194,7 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
           content: [{ type: 'text', text: formatSaveResult(rec) }],
           details: {
             ok: true,
-            record: { id: rec.id, kind: rec.kind, title: rec.title, claimStatus: rec.claimStatus },
+            record: { id: rec.id, kind: rec.kind, claimStatus: rec.claimStatus },
           },
         };
       } catch (err) {
