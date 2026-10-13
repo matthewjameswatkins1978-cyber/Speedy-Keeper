@@ -1,0 +1,50 @@
+# Bat: the extension exposes no lifecycle surface that could inject
+# context or trigger automatic writes (recording Proxy + source scan),
+# and shadow retrieval is log-only with wouldInject false.
+
+version: terrorbat/v1
+
+id: sk-runtime-no-hooks
+
+claim:
+  text: >
+    The adapter registers tools only: no lifecycle hooks, no automatic
+    writes, and shadow retrieval never injects.
+
+requires:
+  - process.spawn
+  - git.inspect
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-runtime-no-hooks.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, runtime, no-injection]
+  description: >
+    Recording Proxy over the extension API, banned-API source scan, and a
+    shadow side-effect audit (only its own log file may appear).

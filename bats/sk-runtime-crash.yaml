@@ -1,0 +1,48 @@
+# Bat: SIGKILL a writer mid-burst. The database must open cleanly
+# afterwards, pass integrity_check, and hold only complete records.
+
+version: terrorbat/v1
+
+id: sk-runtime-crash
+
+claim:
+  text: >
+    Killing a writer mid-burst leaves a clean database with only
+    complete records.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-runtime-crash.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, runtime, crash-consistency]
+  description: >
+    SIGKILL during a 500-save burst, then integrity_check plus a
+    per-record completeness audit.

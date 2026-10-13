@@ -1,0 +1,47 @@
+# Bat: Pi remains operational with Speedy Keeper absent and with it
+# explicitly disabled. No model calls: --list-models --offline only.
+
+version: terrorbat/v1
+
+id: sk-pi-operational
+
+claim:
+  text: >
+    Pi runs normally whether Speedy Keeper is absent or disabled.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-pi-operational.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 180s
+  total: 240s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, runtime, operability]
+  description: >
+    Plain, disabled-extension and enabled-extension Pi boots must all
+    list models and exit zero with no session or inference involved.

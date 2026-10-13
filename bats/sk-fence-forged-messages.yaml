@@ -1,0 +1,49 @@
+# Bat: forged system messages, tool calls, role changes and nested
+# instructions appear only inside memory fences, under the advisory
+# preamble — never as unfenced guidance, never silently dropped.
+
+version: terrorbat/v1
+
+id: sk-fence-forged-messages
+
+claim:
+  text: >
+    Forged privileged content in stored memories is always fenced
+    untrusted data and never unfenced guidance.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-fence-forged-messages.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, fence, prompt-injection]
+  description: >
+    Five forgery carriers (system override, tool-call mimicry, role change,
+    nested instruction) must all render inside fences with provenance.
