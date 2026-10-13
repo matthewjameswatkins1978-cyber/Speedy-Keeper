@@ -35,7 +35,7 @@ function planRuns() {
 }
 
 function buildCommand(plan, paths) {
-  const args = [
+  const toolArgs = [
     '-p',
     plan.prompt,
     '--model',
@@ -47,9 +47,24 @@ function buildCommand(plan, paths) {
     '--offline',
   ];
   if (plan.condition === 'with') {
-    args.push('--extension', join(root, 'pi-extension', 'keeper-memory.ts'));
+    toolArgs.push('--extension', join(root, 'pi-extension', 'keeper-memory.ts'));
   }
-  return { program: 'pi', args, cwd: paths.fixtureDir, timeoutMs: tasks.timeoutSeconds * 1000 };
+  // pi ships as a .cmd shim on Windows: spawn through cmd there.
+  const shell = process.platform === 'win32';
+  return {
+    program: shell ? 'cmd' : 'pi',
+    args: shell ? ['/c', 'pi', ...toolArgs] : toolArgs,
+    cwd: paths.fixtureDir,
+    timeoutMs: tasks.timeoutSeconds * 1000,
+  };
+}
+
+function piList() {
+  // pi ships as a .cmd shim on Windows: list through cmd there.
+  if (process.platform === 'win32') {
+    return execFileSync('cmd', ['/c', 'pi', 'list'], { encoding: 'utf8', timeout: 60000 });
+  }
+  return execFileSync('pi', ['list'], { encoding: 'utf8', timeout: 60000 });
 }
 
 export function dryRun() {
@@ -75,7 +90,7 @@ if (!invokedAsMain) {
   const base = mkdtempSync(join(tmpdir(), 'b3-trial-'));
   const receipt = { startedAt: new Date().toISOString(), model: tasks.model, runs: [], settingsBefore: '', settingsAfter: '' };
   try {
-    receipt.settingsBefore = execFileSync('pi', ['list'], { encoding: 'utf8', timeout: 60000 });
+    receipt.settingsBefore = piList();
     let totalTokens = 0;
     for (const plan of planRuns()) {
       const runDir = mkdtempSync(join(base, `${plan.taskId}-${plan.condition}-`));
@@ -116,7 +131,7 @@ if (!invokedAsMain) {
       if (leaked) throw new Error(`isolation breach in ${plan.taskId}/${plan.condition}: project database created`);
       if (totalTokens > tasks.tokenCeilingTotal) throw new Error(`token ceiling exceeded (${totalTokens}), aborting trial`);
     }
-    receipt.settingsAfter = execFileSync('pi', ['list'], { encoding: 'utf8', timeout: 60000 });
+    receipt.settingsAfter = piList();
     receipt.settingsUnchanged = receipt.settingsBefore === receipt.settingsAfter;
     receipt.finishedAt = new Date().toISOString();
     const out = join(base, 'receipt.json');
