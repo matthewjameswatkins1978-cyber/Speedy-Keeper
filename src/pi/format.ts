@@ -22,7 +22,7 @@ export function escapeMarkers(text: string): string {
   return text.replace(/<<<(begin|end)-untrusted-memory/gi, '<</<$1-untrusted-memory');
 }
 
-function fenceStart(hit: SearchHit): string {
+function fenceStart(hit: Pick<MemoryRecord, 'id' | 'kind' | 'taskScope' | 'claimStatus' | 'revision'>): string {
   const task = hit.taskScope === null ? '' : ` task=${JSON.stringify(escapeMarkers(hit.taskScope))}`;
   return `<<<begin-untrusted-memory id=${JSON.stringify(hit.id)} kind=${hit.kind}${task} status=${hit.claimStatus} revision=${hit.revision}>>>`;
 }
@@ -79,6 +79,30 @@ export function formatSaveResult(rec: MemoryRecord): string {
     ADVISORY_PREAMBLE,
     `saved ${rec.kind} ${rec.id} (revision ${rec.revision}, status ${rec.claimStatus}).`,
     'Find it later with memory_search; tools see budgeted previews only.',
+  ].join('\n');
+}
+
+export function formatGetResult(rec: MemoryRecord): string {
+  const sources =
+    rec.sources.length === 0 ? '(no sources)' : rec.sources.map((s) => `- ${escapeMarkers(s)}`).join('\n');
+  const status = rec.supersededBy === null ? 'current' : `superseded by ${escapeMarkers(rec.supersededBy)}`;
+  return [
+    ADVISORY_PREAMBLE,
+    fenceStart(rec),
+    `title: ${escapeMarkers(rec.title)}`,
+    `body:\n${escapeMarkers(rec.body)}`,
+    `sources:\n${sources}`,
+    `provenance: ${rec.claimStatus}, revision ${rec.revision}, ${status}`,
+    `recorded ${rec.createdAt}, updated ${rec.updatedAt}`,
+    FENCE_END,
+  ].join('\n');
+}
+
+export function formatNotFound(id: string): string {
+  return [
+    ADVISORY_PREAMBLE,
+    `no record with id ${JSON.stringify(escapeMarkers(id))}.`,
+    'Nothing was retrieved; search again with memory_search to find the current id.',
   ].join('\n');
 }
 
