@@ -1,5 +1,5 @@
 /**
- * Extension wiring: the B2 factory registers exactly the two tools and no
+ * Extension wiring: the B2 factory registers exactly three tools and no
  * lifecycle handlers (no auto-injection surface), honours the disabled flag
  * by registering nothing, and reads the disposable-database env override.
  */
