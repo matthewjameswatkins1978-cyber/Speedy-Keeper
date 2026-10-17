@@ -1,0 +1,50 @@
+# Bat: memory_save confirmations carry identifiers only. Malicious titles
+# (role instructions, multiline text, memory delimiters, max-length marker
+# salad) must never surface in confirmation text or structured details,
+# while storage fidelity stays intact behind get(id).
+
+version: terrorbat/v1
+
+id: sk-save-confirmation
+
+claim:
+  text: >
+    No attacker-controlled saved content escapes into memory_save
+    confirmations, text or structured.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-save-confirmation.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.2
+  tags: [speedy-keeper, save-confirmation, prompt-injection]
+  description: >
+    Four hostile titles vs identifier-only confirmations; details.record
+    must hold id/kind/status only; records must persist intact.

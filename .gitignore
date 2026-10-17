@@ -8,3 +8,7 @@ dist/
 keeper-export*.json
 *-keeper-export.json
 .env
+# B4: complete trial evidence (sessions, receipts, probes) stays local per
+# the B4 packet; the repository carries the concise reproducible summary.
+.scratch/
+trials/receipts/

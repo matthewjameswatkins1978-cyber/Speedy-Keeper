@@ -1,0 +1,48 @@
+# Bat: budgets below the minimum useful preview raise a clear budget error
+# (returned as an envelope, never thrown) while the record stays intact.
+
+version: terrorbat/v1
+
+id: sk-budget-tiny
+
+claim:
+  text: >
+    Unfittable budgets produce a structured budget-exceeded failure without
+    damaging stored records.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-budget-tiny.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, budget, context]
+  description: >
+    A 100-char budget against a normal record must yield a budget-exceeded
+    envelope (not a throw, not an empty shape) with the record intact.

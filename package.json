@@ -1,6 +1,6 @@
 {
   "name": "speedy-keeper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Small dependable memory core for coding agents: decisions, gotchas and checkpoints over SQLite FTS5.",
   "type": "module",
   "bin": {
@@ -21,7 +21,9 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "typebox": "1.3.27",
     "typescript": "^7.0.2"
   },
-  "private": true
+  "private": true,
+  "pi":{"extensions":["./pi-extension/keeper-memory.ts"]}
 }

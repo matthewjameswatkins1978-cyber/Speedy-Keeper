@@ -1,0 +1,50 @@
+# Bat: stored fence-like text cannot escape its untrusted-data representation.
+# Claim: every model-visible fence marker belongs to the formatter —
+# exactly one opener and one closer per hit, even when titles, bodies,
+# sources and task scopes carry forged delimiters.
+
+version: terrorbat/v1
+
+id: sk-fence-delimiters
+
+claim:
+  text: >
+    Stored fake memory delimiters never escape their untrusted-data
+    representation in memory_search output.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-fence-delimiters.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, fence, prompt-injection]
+  description: >
+    Seeds forged openers/closers across all text fields, then counts
+    model-visible markers: opener and closer counts must equal hit count.

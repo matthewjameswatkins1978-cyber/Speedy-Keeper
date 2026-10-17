@@ -1,0 +1,49 @@
+# Bat: hostile task scopes (quotes, newlines, >>> breaks, fake openers)
+# cannot break the fence-opener grammar. Every opener line must match the
+# strict formatter grammar exactly.
+
+version: terrorbat/v1
+
+id: sk-fence-taskscope
+
+claim:
+  text: >
+    Hostile task scopes never break the fence-opener grammar in
+    memory_search output.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-fence-taskscope.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b2.1
+  tags: [speedy-keeper, fence, prompt-injection]
+  description: >
+    Four hostile task scopes vs a strict opener-line grammar; opener and
+    closer counts must equal hit count.

@@ -1,0 +1,49 @@
+# Bat: a store flooded with highly relevant memories must not blow the
+# preview budget — hit cap, char cap, balanced fences, advisory intact.
+
+version: terrorbat/v1
+
+id: sk-preview-budget-flood
+
+claim:
+  text: >
+    Even when thousands of memories match the task, the pre-task preview
+    stays within PI_PREVIEW_MAX_HITS and PI_PREVIEW_MAX_CHARS and never
+    emits unbalanced fences or drops the advisory.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-preview-budget-flood.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b4
+  tags: [speedy-keeper, preview, budget, context-exhaustion]
+  description: >
+    Context-budget attack on the condition-D preview: 2000 records, ~400
+    task-relevant, prompt asks for the injected topic.

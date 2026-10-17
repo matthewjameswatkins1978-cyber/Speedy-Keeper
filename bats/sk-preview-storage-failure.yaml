@@ -1,0 +1,48 @@
+# Bat: missing, corrupt or disabled storage degrades to pure silence —
+# no throw, no half-injected prompt section, disablement always wins.
+
+version: terrorbat/v1
+
+id: sk-preview-storage-failure
+
+claim:
+  text: >
+    Missing, corrupt or disabled memory storage never breaks the run and
+    never leaves a partial preview section in the system prompt.
+
+requires:
+  - process.spawn
+
+forbids:
+  - network
+
+attack:
+  run:
+    - adapter: command
+      action: run
+      program: node
+      args:
+        - bats/verifiers/sk-preview-storage-failure.mjs
+      env:
+        SPEEDY_KEEPER_MODULES: D:\Projects\speedy-keeper\node_modules
+
+oracle:
+  type: exit_code
+  step: run:0
+  not_equals: 0
+
+evidence:
+  capture:
+    - stdout
+    - stderr
+
+timeout:
+  run: 120s
+  total: 180s
+
+meta:
+  origin: speedy-keeper-b4
+  tags: [speedy-keeper, preview, failure-modes, disablement]
+  description: >
+    B4 Phase 7 items 7/8: missing dir, corrupt database, SPEEDY_KEEPER_DISABLED
+    and the extension's silence contract.
