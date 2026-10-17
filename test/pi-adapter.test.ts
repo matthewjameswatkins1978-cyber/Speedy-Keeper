@@ -17,9 +17,9 @@ async function call(tool: ToolDefinition, params: Record<string, unknown>): Prom
   return { text: res.content[0]!.text, details: res.details as any };
 }
 
-test('only memory_search and memory_save are exposed', () => {
+test('memory_search, memory_save and memory_get are exposed', () => {
   const names = createMemoryTools({ dbPath: ':memory:' }).map((t) => t.name);
-  assert.deepEqual(names, ['memory_search', 'memory_save']);
+  assert.deepEqual(names, ['memory_search', 'memory_save', 'memory_get']);
 });
 
 test('search returns fenced advisory previews within budget', async () => {

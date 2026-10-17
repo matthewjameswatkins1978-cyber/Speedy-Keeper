@@ -19,7 +19,7 @@ try {
   try {
     const tools = createMemoryTools({ dbPath: join(dir, 'm.sqlite') });
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
-    if (!byName.memory_search || !byName.memory_save || tools.length !== 2) {
+    if (!byName.memory_search || !byName.memory_save || !byName.memory_get || tools.length !== 3) {
       fail(ID, `unexpected tool set: ${tools.map((t) => t.name).join(',')}`);
     }
     const saveDesc = byName.memory_save.description;

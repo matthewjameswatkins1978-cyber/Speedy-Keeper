@@ -37,7 +37,7 @@ try {
   delete process.env['SPEEDY_KEEPER_DB'];
   const extra = touched.filter((p) => p !== 'registerTool');
   if (extra.length > 0) fail(ID, `extension touched API beyond registerTool: ${extra.join(',')}`);
-  if (names.join(',') !== 'memory_search,memory_save') fail(ID, `unexpected tool set: ${names.join(',')}`);
+  if (names.join(',') !== 'memory_search,memory_save,memory_get') fail(ID, `unexpected tool set: ${names.join(',')}`);
 
   // 2. Static: handler/injection APIs appear nowhere in the adapter surface.
   for (const f of ['pi-extension/keeper-memory.ts', 'src/pi/adapter.ts', 'src/pi/shadow.ts', 'src/pi/format.ts']) {

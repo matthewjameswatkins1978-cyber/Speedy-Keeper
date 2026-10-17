@@ -11,7 +11,7 @@ import { resolveDbPath } from '../paths.js';
 import { dirname, resolve as resolvePath } from 'node:path';
 import type { RecordKind } from '../types.js';
 import { PI_SEARCH_MAX_CHARS, estimateTokens } from './budgets.js';
-import { formatFailure, formatSaveResult, formatSearchResults } from './format.js';
+import { formatFailure, formatGetResult, formatNotFound, formatSaveResult, formatSearchResults } from './format.js';
 
 export const SearchParams = Type.Object({
   query: Type.String({ description: 'Free-text query over past decisions, gotchas and checkpoints' }),
@@ -34,6 +34,10 @@ export const SaveParams = Type.Object({
   sources: Type.Optional(Type.Array(Type.String(), { description: 'Source references (files, commits, URLs)' })),
 });
 
+export const GetParams = Type.Object({
+  id: Type.String({ description: 'Exact record id returned by memory_search or memory_save' }),
+});
+
 export interface ToolTextContent {
   type: 'text';
   text: string;
@@ -51,11 +55,11 @@ export interface ToolContext {
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: typeof SearchParams | typeof SaveParams;
+  parameters: typeof SearchParams | typeof SaveParams | typeof GetParams;
   annotations?: { readOnlyHint?: boolean };
   execute: (
     toolCallId: string,
-    params: Static<typeof SearchParams> | Static<typeof SaveParams>,
+    params: Static<typeof SearchParams> | Static<typeof SaveParams> | Static<typeof GetParams>,
     signal?: AbortSignal,
     onUpdate?: unknown,
     ctx?: ToolContext,
@@ -233,5 +237,63 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
     },
   };
 
-  return [searchTool, saveTool];
+  const getTool: ToolDefinition = {
+    name: 'memory_get',
+    description:
+      'Retrieve one complete Speedy Keeper note by exact id: full body plus its source references and provenance. ' +
+      'Read-only; it never modifies memory. A missing id is a clean not-found, not a failure of memory.',
+    parameters: GetParams,
+    annotations: { readOnlyHint: true },
+    promptSnippet: deps.hint === true ? 'memory_get - read one saved note in full by id.' : undefined,
+    promptGuidelines:
+      deps.hint === true ? ['Use memory_get to read the full body of a note returned by memory_search.'] : undefined,
+    execute: async (_id, params, _signal, _onUpdate, ctx) => {
+      const p = params as Static<typeof GetParams>;
+      const cwd = ctx?.cwd ?? process.cwd();
+      let store: KeeperStore | undefined;
+      try {
+        store = open(cwd);
+        const rec = store.get(p.id ?? '');
+        if (rec === null) {
+          return {
+            content: [{ type: 'text', text: formatNotFound(p.id ?? '') }],
+            details: { ok: false, code: 'memory-not-found', id: p.id ?? '' },
+          };
+        }
+        const text = formatGetResult(rec);
+        return {
+          content: [{ type: 'text', text }],
+          details: {
+            ok: true,
+            record: {
+              id: rec.id,
+              kind: rec.kind,
+              claimStatus: rec.claimStatus,
+              revision: rec.revision,
+              supersededBy: rec.supersededBy,
+              sources: rec.sources,
+            },
+          },
+        };
+      } catch (err) {
+        const busy =
+          err instanceof Error && /SQLITE_BUSY|database is locked/i.test(err.message)
+            ? { code: 'memory-busy', message: 'The memory database is busy with another writer; retry the call.' }
+            : null;
+        if (err instanceof KeeperError) {
+          const text = formatFailure(err.code, err.message);
+          return { content: [{ type: 'text', text }], details: { ok: false, code: err.code, message: err.message } };
+        }
+        if (busy !== null) {
+          const text = formatFailure(busy.code, busy.message);
+          return { content: [{ type: 'text', text }], details: { ok: false, code: busy.code, message: busy.message } };
+        }
+        throw err;
+      } finally {
+        store?.close();
+      }
+    },
+  };
+
+  return [searchTool, saveTool, getTool];
 }

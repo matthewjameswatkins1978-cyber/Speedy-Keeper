@@ -76,7 +76,7 @@ test('the extension passes prompt metadata through and still registers no events
       else process.env['SPEEDY_KEEPER_HINT'] = savedHint;
     }
     assert.deepEqual(events, []);
-    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save']);
+    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save', 'memory_get']);
     const search = tools.find((x) => x.name === 'memory_search')!;
     assert.ok(search.promptSnippet, 'extension must forward the snippet to Pi');
     assert.equal(search.promptGuidelines!.length, 1);

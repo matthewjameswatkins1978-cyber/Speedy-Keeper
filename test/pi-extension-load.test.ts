@@ -39,11 +39,11 @@ function capture(env: Record<string, string | undefined>): { tools: PiToolDefini
   }
 }
 
-test('factory registers exactly memory_search and memory_save, no event handlers', () => {
+test('factory registers exactly memory_search, memory_save and memory_get, no event handlers', () => {
   const t = tempDb('pi-ext');
   try {
     const { tools, events } = capture({ SPEEDY_KEEPER_DB: t.db });
-    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save']);
+    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save', 'memory_get']);
     assert.deepEqual(events, []);
     for (const tool of tools) {
       assert.ok(tool.description.length > 20);
