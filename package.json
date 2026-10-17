@@ -1,6 +1,6 @@
 {
   "name": "speedy-keeper",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Small dependable memory core for coding agents: decisions, gotchas and checkpoints over SQLite FTS5.",
   "type": "module",
   "bin": {
