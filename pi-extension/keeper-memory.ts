@@ -8,7 +8,7 @@
  *   SPEEDY_KEEPER_DB points at a disposable database (as in all B2 tests).
  * - SPEEDY_KEEPER_DISABLED=1 registers nothing: Pi runs exactly as if the
  *   extension were absent.
- * - NEVER install globally, NEVER merge auto-injection on this branch.
+ * - INSTALLABLE REVISION: global installation is permitted on this branch only. Auto-injection stays OFF; recall is explicit tool use (memory_save / memory_search) only.
  */
 import { createMemoryTools } from '../src/pi/adapter.js';
 import type { ExtensionAPI } from './pi-types.js';
