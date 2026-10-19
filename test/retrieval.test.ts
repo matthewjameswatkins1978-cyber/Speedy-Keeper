@@ -103,10 +103,11 @@ test('long queries recover via OR fallback when AND starves (PR #7)', () => {
         title: 'API rate limit rationale',
         body: 'ledgerd allows 60 requests per minute per key',
       });
-      // Six tokens; `requests`, `per`, `minute` appear nowhere verbatim as
-      // title/body words alongside the rest, so the AND query starves.
-      // The OR fallback must still return the record (B4 K8-class query).
-      const hits = store.search('API rate limit requests per minute ledgerd');
+      // Six tokens; `distribution` appears nowhere in the record, so the
+      // AND query starves (zero hits). The OR fallback must still return
+      // the record (B4 K8-class query; cf. the zeroed `distribution`
+      // query in docs/b4-live-results.md).
+      const hits = store.search('API rate limit distribution per minute ledgerd');
       assert.equal(hits.length, 1);
       assert.equal(hits[0]!.id, rec.id);
     } finally {
