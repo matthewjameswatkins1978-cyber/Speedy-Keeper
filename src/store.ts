@@ -168,16 +168,18 @@ function checkFiniteNumber(value: number | undefined, field: string, min: number
   return Math.floor(value);
 }
 
-/** Quote user text into a safe FTS5 AND query with prefix matching. */
-function toMatchQuery(query: string): { match: string; tokens: string[] } | null {
+/** Quote user text into a safe FTS5 AND query with prefix matching, plus an OR fallback for AND-starvation. */
+function toMatchQuery(query: string): { match: string; orMatch: string; tokens: string[] } | null {
   const tokens = query
     .split(/\s+/)
     .map((t) => t.replace(/^[*^():"]+|[*^():"]+$/g, '').trim())
     .filter((t) => t.length > 0)
     .slice(0, 32);
   if (tokens.length === 0) return null;
+  const quoted = tokens.map((t) => `"${t.replace(/"/g, '""')}"*`);
   return {
-    match: tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' '),
+    match: quoted.join(' '),
+    orMatch: quoted.join(' OR '),
     tokens,
   };
 }
@@ -439,6 +441,14 @@ export class KeeperStore {
             `WHERE records_fts MATCH ? ${where} ORDER BY rank LIMIT ?`,
         )
         .all(parsed.match, ...params, limit) as Record<string, unknown>[];
+      if (rows.length === 0 && parsed.orMatch !== parsed.match && parsed.tokens.length >= 3) {
+        rows = this.db
+          .prepare(
+            `SELECT r.* FROM records_fts f JOIN records r ON r.rowid = f.rowid ` +
+              `WHERE records_fts MATCH ? ${where} ORDER BY rank LIMIT ?`,
+          )
+          .all(parsed.orMatch, ...params, limit) as Record<string, unknown>[];
+      }
     } catch (err) {
       if (!isRecoverableFtsError(err)) throw err;
       const like = `%${escapeLike(query)}%`;
