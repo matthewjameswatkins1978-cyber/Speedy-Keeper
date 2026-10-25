@@ -1,8 +1,10 @@
 # Speedy Keeper
 
-Small, dependable memory for coding agents: **decisions**, **gotchas** and
-task-scoped **checkpoints** over SQLite + FTS5. CLI first; a clean `src/index.ts`
-surface is reserved for the future Pi extension.
+**Remember the useful bit, without swallowing the whole transcript.**
+
+Speedy Keeper gives coding agents small, local, project-scoped memory for **decisions**, **gotchas**, and **checkpoints** over SQLite + FTS5. It's useful when a worker needs to recall why a design was chosen, where a trap lies, or what was last verified, without turning every run into a giant context dump.
+
+The core has a CLI and a library API. An **opt-in Pi extension** is now present in `pi-extension/keeper-memory.ts`; it provides explicit memory tools but does not automatically inject memories into a conversation.
 
 - No ORM, server, MCP, embeddings, daemon or background work.
 - One database per project at `<git-common-dir>/speedy-keeper/memory.sqlite`.
@@ -70,13 +72,13 @@ transaction rollback, backup/restore, project isolation (incl. git worktree
 sharing) and secret rejection. Databases and fixtures live in the OS temp dir
 and `*.sqlite*` files are git-ignored.
 
-## B2 experiment (isolated Pi adapter, do not install)
+## Pi integration (experimental)
 
-Branch `feat/b2-isolated-pi` carries an experimental Pi 1.1.0 adapter exposing
-only `memory_search` / `memory_save` over this core, with budgeted advisory
-output and shadow-mode-only pre-task retrieval. See
-docs/b2-isolation-report.md for measurements, production gates and the
-continue-as-experiment recommendation.
+The package declares a Pi extension in `package.json`, currently exposing `memory_search`, `memory_save`, and read-only `memory_get`. It has **no automatic context injection**, no event-driven memory writes, and no background process. The default is explicit tool use by the coding agent.
+
+For an isolated test, first set `SPEEDY_KEEPER_DB` to a disposable database path so the test cannot touch your project memory. Set `SPEEDY_KEEPER_DISABLED=1` to register no Pi tools. The optional `SPEEDY_KEEPER_HINT=1` discovery hint is a trial-only feature.
+
+See [the B2 isolation report](docs/b2-isolation-report.md) for measurements and boundaries. Treat integration as experimental rather than assuming a production-grade memory service.
 
 ## Performance
 
