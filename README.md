@@ -1,8 +1,20 @@
 # Speedy Keeper
 
-Small, dependable memory for coding agents: **decisions**, **gotchas** and
-task-scoped **checkpoints** over SQLite + FTS5. CLI first; a clean `src/index.ts`
-surface is reserved for the future Pi extension.
+Small, dependable memory for coding agents — memory you actually read.
+Six typed record kinds (**decision**, **gotcha**, **checkpoint**,
+**baseline**, **ask**, **brief**) with enforced evidence grades
+(INFERRED / SOURCE-READ / TESTED) over SQLite + FTS5. CLI first; the Pi
+extension (`pi-extension/`) exposes `memory_preview`, `memory_search`
+and `memory_save`.
+
+- No ORM, server, MCP, embeddings, daemon or background work.
+- One database per project at `<git-common-dir>/speedy-keeper/memory.sqlite`.
+- Supersede-don't-mutate updates, revision-conflict protection, WAL concurrency.
+- Secrets rejected, raw dumps refused, TESTED grade requires a recorded run.
+- Staleness is computed from missing objects, never from clocks.
+
+New here? Run `keeper guide` first — one screen teaches the workflow.
+See `docs/keeper-v2-design.md` for the v2 rationale and trial gate.
 
 - No ORM, server, MCP, embeddings, daemon or background work.
 - One database per project at `<git-common-dir>/speedy-keeper/memory.sqlite`.
@@ -35,6 +47,23 @@ node dist/src/cli.js get --id <id>
 
 # correct by superseding (atomic; --expected-revision enables conflict checks)
 node dist/src/cli.js supersede --id <old-id> --kind decision --title "Use WAL mode" --body "Plus busy_timeout=5s"
+
+# preview: task-scoped recall with an explicit no-memory outcome (read this first)
+node dist/src/cli.js preview --task checkout
+
+# project the live set to capped Markdown (200 lines / 25 KB)
+node dist/src/cli.js project --out MEMORY.md
+
+# verify freshness: which live records name objects that no longer exist
+node dist/src/cli.js verify --task checkout
+
+# self-diagnose (every failure names its fix) and learn the workflow
+node dist/src/cli.js doctor
+node dist/src/cli.js guide
+
+# grades (enforced): INFERRED default; SOURCE-READ needs --sources;
+# TESTED needs --sources plus --run "<cmd>" --exit <n>
+node dist/src/cli.js save --kind decision --title "Staged checking is the evidence path" --body "whole-66 red by measurement" --grade TESTED --run "npm test" --exit 0 --sources test/x.test.js --depends 88c59cb --link "refines:<other-id>"
 
 # online backup + readable export
 node dist/src/cli.js backup --to ./keeper-backup.sqlite
