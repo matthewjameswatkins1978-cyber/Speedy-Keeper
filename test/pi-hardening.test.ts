@@ -65,7 +65,10 @@ test('D2: formatter never cuts mid-block and always fits the cap', () => {
         assert.equal(openers, closers, `cap ${cap}: mid-block cut (${openers} vs ${closers})`);
       }
       const noted = formatSearchResults(hits, 900);
-      assert.ok(noted.includes('omitted'), 'eviction must say so with a narrowing hint');
+      assert.ok(
+        noted.includes('omitted') || noted.includes('shrunk'),
+        'any reduction (omission or shrink) must say so with a narrowing hint',
+      );
       void formatHit;
     } finally {
       store.close();

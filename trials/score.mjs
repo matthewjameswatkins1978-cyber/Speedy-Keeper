@@ -243,8 +243,10 @@ export function applyOracle(task, stats, fixtureDir, condition, facts = {}) {
   if (o.fixtureTests === true && facts.fixtureTestsExit !== 0) {
     fails.push(`fixture tests did not pass after run (exit=${facts.fixtureTestsExit})`);
   }
-  // K7: under D the preview must have found nothing relevant to inject.
-  if (o.requirePreviewEmpty === true && condition === 'D') {
+  // K7: under D/E the preview must have found nothing relevant to inject.
+  // E shares D's injection machinery exactly (only the seed records differ),
+  // so the same emptiness contract applies.
+  if (o.requirePreviewEmpty === true && (condition === 'D' || condition === 'E')) {
     const hits = facts.preview?.hitIds?.length ?? 0;
     if (hits > 0) fails.push(`irrelevant memory injected under D: ${hits} hit(s)`);
   }

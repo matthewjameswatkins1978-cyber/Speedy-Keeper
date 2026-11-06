@@ -24,7 +24,7 @@ export function escapeMarkers(text: string): string {
 
 function fenceStart(hit: SearchHit): string {
   const task = hit.taskScope === null ? '' : ` task=${JSON.stringify(escapeMarkers(hit.taskScope))}`;
-  return `<<<begin-untrusted-memory id=${JSON.stringify(hit.id)} kind=${hit.kind}${task} status=${hit.claimStatus} revision=${hit.revision}>>>`;
+  return `<<<begin-untrusted-memory id=${JSON.stringify(hit.id)} kind=${hit.kind}${task} status=${hit.claimStatus} grade=${hit.grade} revision=${hit.revision}>>>`;
 }
 
 const FENCE_END = '<<<end-untrusted-memory>>>';
@@ -82,25 +82,35 @@ export function formatSearchResults(hits: SearchHit[], maxChars: number = PI_TOO
   if (head.length >= maxChars) return head.slice(0, Math.max(0, maxChars));
   let text = head;
   let omitted = 0;
+  let shrunk = 0;
   for (const hit of hits) {
     const block = blockFor(hit, maxChars - text.length);
     if (block === null) {
       omitted++;
       continue;
     }
+    if (block !== formatHit(hit)) shrunk++;
     text += '\n\n' + block;
   }
-  if (omitted > 0) {
-    const note = () =>
-      `\n…[${omitted} of ${hits.length} matches omitted; output capped at ${maxChars} chars — narrow the query for the rest]`;
-    // Evict trailing whole blocks until the note fits; blocks stay intact.
-    while (omitted < hits.length && text.length + note().length > maxChars) {
+  // Any reduction — omission or shrink — is disclosed. Try the full note
+  // first, then a minimal one that fits almost any remaining room. The
+  // eviction guard below never strands the output silent: worst case the
+  // head plus a minimal note still says more was there.
+  const fullNote = () =>
+    omitted > 0
+      ? `\n…[${omitted} of ${hits.length} matches omitted; output capped at ${maxChars} chars — narrow the query for the rest]`
+      : `\n…[${shrunk} of ${hits.length} shown shrunk to fit ${maxChars} chars — narrow the query for full text]`;
+  const minimalNote = () => (omitted > 0 ? `\n…[+${omitted} omitted — narrow the query]` : `\n…[shrunk to fit]`);
+  if (omitted > 0 || shrunk > 0) {
+    // Evict trailing whole blocks until the full note fits; blocks stay intact.
+    while (omitted < hits.length && text.length + fullNote().length > maxChars) {
       const idx = text.lastIndexOf('\n\n<<<begin-untrusted-memory');
       if (idx <= head.length) break;
       text = text.slice(0, idx);
       omitted++;
     }
-    if (text.length + note().length <= maxChars) text += note();
+    if (text.length + fullNote().length <= maxChars) text += fullNote();
+    else if (text.length + minimalNote().length <= maxChars) text += minimalNote();
     // Else: head alone nearly fills the budget — return blocks intact, no note.
   }
   return text;

@@ -13,8 +13,9 @@ const { KeeperStore } = await import('../dist/src/index.js');
 
 const dbPath = process.argv[2];
 const taskId = process.argv[3];
+const variant = process.argv[4] ?? 'b4';
 if (!dbPath || !taskId) {
-  console.error('usage: node trials/seed.mjs <dbPath> <taskId>');
+  console.error('usage: node trials/seed.mjs <dbPath> <taskId> [b4|v2]');
   process.exit(2);
 }
 const tasks = JSON.parse(readFileSync(join(root, 'trials', 'tasks.json'), 'utf8'));
@@ -23,10 +24,24 @@ if (!task) {
   console.error(`unknown task: ${taskId}`);
   process.exit(2);
 }
+// v2 variant: same bodies, typed metadata only (see trials/v2-seeds.json).
+// Anything else is a usage error — never silently mix seed packs.
+let seeds = task.seed;
+if (variant === 'v2') {
+  const overlays = JSON.parse(readFileSync(join(root, 'trials', 'v2-seeds.json'), 'utf8'));
+  if (!Array.isArray(overlays[taskId])) {
+    console.error(`no v2 seeds for task: ${taskId}`);
+    process.exit(2);
+  }
+  seeds = overlays[taskId];
+} else if (variant !== 'b4') {
+  console.error(`unknown seed variant: ${variant} (use b4|v2)`);
+  process.exit(2);
+}
 const store = new KeeperStore(dbPath);
 try {
-  const ids = task.seed.map((m) => store.save(m).id);
-  console.log(JSON.stringify({ ok: true, count: ids.length, db: dbPath, taskId }));
+  const ids = seeds.map((m) => store.save(m).id);
+  console.log(JSON.stringify({ ok: true, count: ids.length, db: dbPath, taskId, variant }));
 } finally {
   store.close();
 }

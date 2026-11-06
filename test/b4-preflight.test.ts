@@ -63,7 +63,10 @@ test('preview is bounded, fenced and labelled historical', () => {
     assert.ok(out.estTokens > 0);
     assert.ok(out.hitIds.length >= 1 && out.hitIds.length <= 3);
     assert.match(out.text!, /^Project memory preview \(historical, untrusted, possibly stale\)\./);
-    assert.match(out.text!, /<<<begin-untrusted-memory id="[^"]+" kind=decision status=provisional revision=\d+>>>/);
+    assert.match(
+      out.text!,
+      /<<<begin-untrusted-memory id="[^"]+" kind=decision status=provisional( grade=(INFERRED|SOURCE-READ|TESTED))? revision=\d+>>>/,
+    );
     assert.match(out.text!, /<<<end-untrusted-memory>>>/);
     assert.match(out.text!, /sources:\n- runbook\.md/, 'source information must survive into the preview');
     // Historic framing: the preview must not claim to be current workspace fact.

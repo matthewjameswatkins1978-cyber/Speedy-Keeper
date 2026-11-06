@@ -327,5 +327,9 @@ export function createMemoryTools(deps: MemoryToolDeps = {}): ToolDefinition[] {
     },
   };
 
+  // B4 replication mode: SPEEDY_KEEPER_V2=0 restores the exact two-tool
+  // surface B4 measured (search+save, no preview tool). Default is the v2
+  // set; the flag exists so old trials stay comparable.
+  if (process.env['SPEEDY_KEEPER_V2'] === '0') return [searchTool, saveTool];
   return [searchTool, saveTool, previewTool];
 }

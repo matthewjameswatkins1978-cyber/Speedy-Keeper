@@ -22,6 +22,18 @@ test('memory_search, memory_save and memory_preview are exposed (v2 toolset)', (
   assert.deepEqual(names, ['memory_search', 'memory_save', 'memory_preview']);
 });
 
+test('SPEEDY_KEEPER_V2=0 restores the exact B4 two-tool surface', () => {
+  const saved = process.env['SPEEDY_KEEPER_V2'];
+  try {
+    process.env['SPEEDY_KEEPER_V2'] = '0';
+    const names = createMemoryTools({ dbPath: ':memory:' }).map((t) => t.name);
+    assert.deepEqual(names, ['memory_search', 'memory_save']);
+  } finally {
+    if (saved === undefined) delete process.env['SPEEDY_KEEPER_V2'];
+    else process.env['SPEEDY_KEEPER_V2'] = saved;
+  }
+});
+
 test('search returns fenced advisory previews within budget', async () => {
   const t = tempDb('pi-adapter');
   try {

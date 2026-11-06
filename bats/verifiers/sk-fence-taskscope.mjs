@@ -10,7 +10,7 @@ import { ensureBuilt, fail, pass } from './_setup.mjs';
 
 const ID = 'sk-fence-taskscope';
 const GRAMMAR =
-  /^<<<begin-untrusted-memory id="[0-9a-f-]{36}" kind=(decision|gotcha|checkpoint)( task=".*")? status=(provisional|evidenced) revision=\d+>>>$/;
+  /^<<<begin-untrusted-memory id="[0-9a-f-]{36}" kind=(decision|gotcha|checkpoint|baseline|ask|brief)( task=".*")? status=(provisional|evidenced)( grade=(INFERRED|SOURCE-READ|TESTED))? revision=\d+>>>$/;
 
 try {
   ensureBuilt();
