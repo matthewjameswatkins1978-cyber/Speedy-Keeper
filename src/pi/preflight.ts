@@ -206,7 +206,7 @@ function renderPreview(hits: SearchHit[], maxChars: number, wordQueries: WordQue
     return notes.length > 0 ? `\n\n…[${notes.join('; ')}]` : '';
   };
   const prefix = `${HEAD}\n\n${ADVISORY_PREAMBLE}`;
-  let kept = hits.map(formatHit);
+  let kept = hits.map((h) => formatHit(h));
   let omitted = 0;
   const assemble = (): string => prefix + kept.map((b) => `\n\n${b}`).join('') + noteFor(omitted);
   // Evict trailing WHOLE fence blocks until head + advisory + note fit too.

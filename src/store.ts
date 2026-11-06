@@ -22,9 +22,13 @@ import {
 } from './secrets.js';
 import type {
   ClaimStatus,
+  EvidenceGrade,
   ExportOptions,
+  GradeEvidence,
+  LinkRel,
   MemoryRecord,
   RecordKind,
+  RecordLink,
   SaveInput,
   SearchHit,
   SearchOptions,
@@ -54,18 +58,23 @@ export class ValidationError extends KeeperError {
   code = 'validation';
 }
 
-const KINDS: readonly RecordKind[] = ['decision', 'gotcha', 'checkpoint'];
+const KINDS: readonly RecordKind[] = ['decision', 'gotcha', 'checkpoint', 'baseline', 'ask', 'brief'];
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS records (
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('decision','gotcha','checkpoint')),
+  kind TEXT NOT NULL CHECK (kind IN ('decision','gotcha','checkpoint','baseline','ask','brief')),
   title TEXT NOT NULL,
   body TEXT NOT NULL,
   task_scope TEXT,
   sources TEXT NOT NULL DEFAULT '[]',
   claim_status TEXT NOT NULL DEFAULT 'provisional'
     CHECK (claim_status IN ('provisional','evidenced')),
+  grade TEXT NOT NULL DEFAULT 'INFERRED'
+    CHECK (grade IN ('INFERRED','SOURCE-READ','TESTED')),
+  evidence TEXT,
+  depends_on TEXT NOT NULL DEFAULT '[]',
+  links TEXT NOT NULL DEFAULT '[]',
   revision INTEGER NOT NULL DEFAULT 1,
   superseded_by TEXT REFERENCES records(id),
   created_at TEXT NOT NULL,
@@ -96,6 +105,10 @@ interface ValidatedInput {
   taskScope: string | null;
   sources: string[];
   claimStatus: ClaimStatus;
+  grade: EvidenceGrade;
+  evidence: GradeEvidence | null;
+  dependsOn: string[];
+  links: RecordLink[];
 }
 
 function nowIso(): string {
@@ -143,20 +156,88 @@ function validateInput(input: SaveInput): ValidatedInput {
       return t;
     });
   }
-  // Claim status: provisional unless the caller explicitly marks evidenced
-  // WITH at least one source. Never inferred, never automatic.
-  let claimStatus: ClaimStatus = 'provisional';
+  // Grades (v2): INFERRED is the default and maps to provisional.
+  // SOURCE-READ and TESTED map to evidenced and require at least one source.
+  // TESTED additionally requires run evidence (command + exit code) so the
+  // grade can never be claimed without the run behind it. An explicit
+  // claimStatus is still honoured for backwards compatibility, but it may
+  // never exceed what the grade allows (evidenced requires a non-INFERRED
+  // grade with sources).
+  let grade: EvidenceGrade = 'INFERRED';
+  if (input.grade !== undefined) {
+    if (input.grade !== 'INFERRED' && input.grade !== 'SOURCE-READ' && input.grade !== 'TESTED') {
+      throw new ValidationError(`grade must be INFERRED, SOURCE-READ or TESTED`);
+    }
+    grade = input.grade;
+  }
+  let evidence: GradeEvidence | null = null;
+  if (input.evidence !== undefined) {
+    if (typeof input.evidence !== 'object' || input.evidence === null) {
+      throw new ValidationError('evidence must be {run, exit}');
+    }
+    const run = checkString(input.evidence.run, 'evidence.run', MAX_SOURCE_CHARS, true)!;
+    const exit = input.evidence.exit;
+    if (typeof exit !== 'number' || !Number.isInteger(exit)) {
+      throw new ValidationError('evidence.exit must be an integer exit code');
+    }
+    evidence = { run, exit };
+  }
+  if ((grade === 'SOURCE-READ' || grade === 'TESTED') && sources.length === 0) {
+    throw new ValidationError(`grade '${grade}' requires at least one source`);
+  }
+  if (grade === 'TESTED' && evidence === null) {
+    throw new ValidationError(
+      `grade 'TESTED' requires evidence {run, exit}: re-run the command, record its exit code, then save`,
+    );
+  }
+  let claimStatus: ClaimStatus = grade === 'INFERRED' ? 'provisional' : 'evidenced';
   if (input.claimStatus !== undefined) {
     if (input.claimStatus !== 'provisional' && input.claimStatus !== 'evidenced') {
       throw new ValidationError(`claimStatus must be 'provisional' or 'evidenced'`);
     }
-    if (input.claimStatus === 'evidenced' && sources.length === 0) {
-      throw new ValidationError(`claimStatus 'evidenced' requires at least one source`);
+    if (input.claimStatus === 'evidenced' && claimStatus === 'provisional') {
+      if (sources.length === 0) {
+        throw new ValidationError(`claimStatus 'evidenced' requires a non-INFERRED grade with sources`);
+      }
+      // Backwards compatibility: pre-grade callers mark evidenced with
+      // sources. That is exactly SOURCE-READ, so promote rather than refuse.
+      grade = 'SOURCE-READ';
+      claimStatus = 'evidenced';
+    } else {
+      claimStatus = input.claimStatus;
     }
-    claimStatus = input.claimStatus;
+  }
+  let dependsOn: string[] = [];
+  if (input.dependsOn !== undefined) {
+    if (!Array.isArray(input.dependsOn)) throw new ValidationError('dependsOn must be an array of strings');
+    dependsOn = input.dependsOn.map((d, i) => {
+      if (typeof d !== 'string' || d.trim() === '') {
+        throw new ValidationError(`dependsOn[${i}] must be a non-empty string`);
+      }
+      const t = d.trim();
+      if (t.length > MAX_SOURCE_CHARS) throw new ValidationError(`dependsOn[${i}] exceeds ${MAX_SOURCE_CHARS} characters`);
+      return t;
+    });
+  }
+  let links: RecordLink[] = [];
+  if (input.links !== undefined) {
+    if (!Array.isArray(input.links)) throw new ValidationError('links must be an array of {rel, id}');
+    const rels: readonly string[] = ['supersedes', 'falsifies', 'refines', 'answers'];
+    links = input.links.map((l, i) => {
+      if (typeof l !== 'object' || l === null) throw new ValidationError(`links[${i}] must be {rel, id}`);
+      const rel = (l as { rel: unknown }).rel;
+      const id = (l as { id: unknown }).id;
+      if (typeof rel !== 'string' || !rels.includes(rel)) {
+        throw new ValidationError(`links[${i}].rel must be one of ${rels.join(', ')}`);
+      }
+      if (typeof id !== 'string' || id.trim() === '') {
+        throw new ValidationError(`links[${i}].id must be a non-empty record id`);
+      }
+      return { rel: rel as LinkRel, id: id.trim() };
+    });
   }
   assertNoSecrets([title, body, taskScope, sources.join('\n')]);
-  return { kind: input.kind, title, body, taskScope, sources, claimStatus };
+  return { kind: input.kind, title, body, taskScope, sources, claimStatus, grade, evidence, dependsOn, links };
 }
 
 function checkFiniteNumber(value: number | undefined, field: string, min: number): number | undefined {
@@ -263,6 +344,7 @@ function toSearchHit(rec: MemoryRecord, tokens: string[], snippetChars: number):
     taskScope: rec.taskScope,
     sources: rec.sources,
     claimStatus: rec.claimStatus,
+    grade: rec.grade,
     revision: rec.revision,
     supersededBy: rec.supersededBy,
     createdAt: rec.createdAt,
@@ -270,13 +352,58 @@ function toSearchHit(rec: MemoryRecord, tokens: string[], snippetChars: number):
   };
 }
 
-function toRecord(row: Record<string, unknown>): MemoryRecord {
-  let sources: string[] = [];
+function parseStringArray(raw: unknown): string[] {
   try {
-    const parsed: unknown = JSON.parse(String(row['sources'] ?? '[]'));
-    if (Array.isArray(parsed)) sources = parsed.filter((s): s is string => typeof s === 'string');
+    const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) return parsed.filter((s): s is string => typeof s === 'string');
   } catch {
-    sources = [];
+    /* fall through to [] */
+  }
+  return [];
+}
+
+function toRecord(row: Record<string, unknown>): MemoryRecord {
+  const sources = parseStringArray(row['sources'] ?? '[]');
+  let grade: EvidenceGrade = 'INFERRED';
+  const g = row['grade'];
+  if (g === 'INFERRED' || g === 'SOURCE-READ' || g === 'TESTED') grade = g;
+  let evidence: GradeEvidence | null = null;
+  try {
+    const raw = row['evidence'];
+    if (typeof raw === 'string' && raw !== '') {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        typeof (parsed as { run: unknown }).run === 'string' &&
+        Number.isInteger((parsed as { exit: unknown }).exit)
+      ) {
+        evidence = {
+          run: (parsed as { run: string }).run,
+          exit: (parsed as { exit: number }).exit,
+        };
+      }
+    }
+  } catch {
+    evidence = null;
+  }
+  let links: RecordLink[] = [];
+  try {
+    const raw = row['links'];
+    const parsed: unknown = typeof raw === 'string' && raw !== '' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) {
+      const rels: readonly string[] = ['supersedes', 'falsifies', 'refines', 'answers'];
+      links = parsed.flatMap((l): RecordLink[] => {
+        if (typeof l !== 'object' || l === null) return [];
+        const rel = (l as { rel: unknown }).rel;
+        const id = (l as { id: unknown }).id;
+        if (typeof rel !== 'string' || !rels.includes(rel)) return [];
+        if (typeof id !== 'string' || id === '') return [];
+        return [{ rel: rel as LinkRel, id }];
+      });
+    }
+  } catch {
+    links = [];
   }
   return {
     id: String(row['id']),
@@ -286,6 +413,10 @@ function toRecord(row: Record<string, unknown>): MemoryRecord {
     taskScope: row['task_scope'] === null || row['task_scope'] === undefined ? null : String(row['task_scope']),
     sources,
     claimStatus: row['claim_status'] as ClaimStatus,
+    grade,
+    evidence,
+    dependsOn: parseStringArray(row['depends_on'] ?? '[]'),
+    links,
     revision: Number(row['revision']),
     supersededBy:
       row['superseded_by'] === null || row['superseded_by'] === undefined ? null : String(row['superseded_by']),
@@ -314,6 +445,7 @@ export class KeeperStore {
       this.db.exec(`PRAGMA busy_timeout = ${timeout}`);
       this.db.exec('PRAGMA foreign_keys = ON');
       this.db.exec(SCHEMA_SQL);
+      this.migrateV1IfNeeded();
     } catch (err) {
       // Never leak the file handle when setup fails (corrupt/unreadable db).
       try {
@@ -327,6 +459,61 @@ export class KeeperStore {
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * v1 → v2 schema migration. Databases created before the grade/evidence/
+   * depends_on/links columns keep the old shape (CREATE TABLE IF NOT
+   * EXISTS never alters them), so rebuild once: copy every row (an old
+   * `evidenced` claim becomes SOURCE-READ — "has sources", never TESTED,
+   * which requires a recorded run), then rebuild the FTS index over the
+   * new rowids. Fresh and already-migrated databases are untouched.
+   */
+  private migrateV1IfNeeded(): void {
+    const cols = this.db.prepare('PRAGMA table_info(records)').all() as Record<string, unknown>[];
+    if (cols.some((c) => String(c['name']) === 'grade')) return;
+    if (!cols.some((c) => String(c['name']) === 'id')) return;
+    this.transaction(() => {
+      this.db.exec(
+        `CREATE TABLE records_new (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK (kind IN ('decision','gotcha','checkpoint','baseline','ask','brief')),
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          task_scope TEXT,
+          sources TEXT NOT NULL DEFAULT '[]',
+          claim_status TEXT NOT NULL DEFAULT 'provisional'
+            CHECK (claim_status IN ('provisional','evidenced')),
+          grade TEXT NOT NULL DEFAULT 'INFERRED'
+            CHECK (grade IN ('INFERRED','SOURCE-READ','TESTED')),
+          evidence TEXT,
+          depends_on TEXT NOT NULL DEFAULT '[]',
+          links TEXT NOT NULL DEFAULT '[]',
+          revision INTEGER NOT NULL DEFAULT 1,
+          superseded_by TEXT REFERENCES records_new(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`,
+      );
+      this.db.exec(
+        `INSERT INTO records_new (id, kind, title, body, task_scope, sources, claim_status, grade, evidence, depends_on, links, revision, superseded_by, created_at, updated_at)
+         SELECT id, kind, title, body, task_scope, sources, claim_status,
+           CASE claim_status WHEN 'evidenced' THEN 'SOURCE-READ' ELSE 'INFERRED' END,
+           NULL, '[]', '[]', revision, superseded_by, created_at, updated_at
+         FROM records`,
+      );
+      this.db.exec('DROP TABLE records');
+      this.db.exec('ALTER TABLE records_new RENAME TO records');
+      this.db.exec('DROP TRIGGER IF EXISTS records_ai');
+      this.db.exec('DROP TRIGGER IF EXISTS records_ad');
+      this.db.exec('DROP TRIGGER IF EXISTS records_au');
+      this.db.exec('DROP TABLE IF EXISTS records_fts');
+      this.db.exec(SCHEMA_SQL);
+      this.db.exec(
+        'INSERT INTO records_fts(rowid, title, body, task_scope) ' +
+          'SELECT rowid, title, body, task_scope FROM records',
+      );
+    });
   }
 
   /**
@@ -404,21 +591,26 @@ export class KeeperStore {
     const collect = (rows: Record<string, unknown>[], tokens: string[]): SearchHit[] => {
       const hits: SearchHit[] = [];
       let used = 0;
+      let firstId: string | null = null;
       for (const row of rows) {
         const rec = toRecord(row);
+        if (firstId === null) firstId = rec.id;
         const hit = fitHit(rec, tokens, snippetChars, maxChars - used);
         if (hit === null) {
-          if (hits.length === 0) {
-            throw new BudgetError(
-              `budget-exceeded: record ${rec.id} cannot fit in ${maxChars} chars even as a ` +
-                `minimum preview (id, title and metadata); raise maxChars or read the full ` +
-                `record with get(id)`,
-            );
-          }
-          break;
+          // A giant hit must not starve smaller later ones: skip it and keep
+          // accumulating within budget. If nothing fits at all, the budget
+          // error below preserves the failure-vs-empty distinction.
+          continue;
         }
         hits.push(hit);
         used += hitSize(hit);
+      }
+      if (hits.length === 0 && rows.length > 0) {
+        throw new BudgetError(
+          `budget-exceeded: record ${firstId} cannot fit in ${maxChars} chars even as a ` +
+            `minimum preview (id, title and metadata); raise maxChars or read the full ` +
+            `record with get(id)`,
+        );
       }
       return hits;
     };
@@ -448,6 +640,37 @@ export class KeeperStore {
             `${where} ORDER BY r.rowid DESC LIMIT ?`,
         )
         .all(like, like, ...params, limit) as Record<string, unknown>[];
+    }
+    if (rows.length === 0 && parsed.tokens.length > 1) {
+      // AND-starvation fallback (B4 finding): all-tokens-required matching
+      // returns nothing even when each token hits separately. Retry with OR
+      // so partial matches surface instead of a false empty result.
+      // Guard: every token must hit at least one live record on its own.
+      // Without this, one corpus-absent token (e.g. "original", present
+      // only in a superseded record) turns the OR set into noise from the
+      // remaining generic tokens — the backup test pins this shape.
+      const orMatch = parsed.tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' OR ');
+      try {
+        const countStmt = this.db.prepare(
+          `SELECT COUNT(*) AS n FROM records_fts f JOIN records r ON r.rowid = f.rowid ` +
+            `WHERE records_fts MATCH ? ${where}`,
+        );
+        const allHit = parsed.tokens.every((t) => {
+          const one = `"${t.replace(/"/g, '""')}"*`;
+          const row = countStmt.get(one, ...params) as { n: number } | undefined;
+          return (row?.n ?? 0) > 0;
+        });
+        if (allHit) {
+          rows = this.db
+            .prepare(
+              `SELECT r.* FROM records_fts f JOIN records r ON r.rowid = f.rowid ` +
+                `WHERE records_fts MATCH ? ${where} ORDER BY rank LIMIT ?`,
+            )
+            .all(orMatch, ...params, limit) as Record<string, unknown>[];
+        }
+      } catch {
+        // Keep the original (empty) result; never fail a search on fallback.
+      }
     }
     return collect(rows, parsed.tokens);
   }
@@ -509,10 +732,24 @@ export class KeeperStore {
     const id = randomUUID();
     this.db
       .prepare(
-        'INSERT INTO records (id, kind, title, body, task_scope, sources, claim_status, revision, created_at, updated_at) ' +
-          'VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
+        'INSERT INTO records (id, kind, title, body, task_scope, sources, claim_status, grade, evidence, depends_on, links, revision, created_at, updated_at) ' +
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
       )
-      .run(id, v.kind, v.title, v.body, v.taskScope, JSON.stringify(v.sources), v.claimStatus, stamp, stamp);
+      .run(
+        id,
+        v.kind,
+        v.title,
+        v.body,
+        v.taskScope,
+        JSON.stringify(v.sources),
+        v.claimStatus,
+        v.grade,
+        v.evidence === null ? null : JSON.stringify(v.evidence),
+        JSON.stringify(v.dependsOn),
+        JSON.stringify(v.links),
+        stamp,
+        stamp,
+      );
     return {
       id,
       kind: v.kind,
@@ -521,6 +758,10 @@ export class KeeperStore {
       taskScope: v.taskScope,
       sources: v.sources,
       claimStatus: v.claimStatus,
+      grade: v.grade,
+      evidence: v.evidence,
+      dependsOn: v.dependsOn,
+      links: v.links,
       revision: 1,
       supersededBy: null,
       createdAt: stamp,

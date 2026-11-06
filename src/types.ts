@@ -1,6 +1,6 @@
 /** Shared record shapes for the Speedy Keeper memory core. */
 
-export type RecordKind = 'decision' | 'gotcha' | 'checkpoint';
+export type RecordKind = 'decision' | 'gotcha' | 'checkpoint' | 'baseline' | 'ask' | 'brief';
 
 /**
  * Provisional claims are unverified working notes.
@@ -9,6 +9,28 @@ export type RecordKind = 'decision' | 'gotcha' | 'checkpoint';
  * caller explicitly passes it together with at least one source.
  */
 export type ClaimStatus = 'provisional' | 'evidenced';
+
+/**
+ * Evidence grade, enforced at write time (v2). INFERRED is the default and
+ * maps to provisional; SOURCE-READ and TESTED map to evidenced and require
+ * at least one source. TESTED additionally requires evidence.run +
+ * evidence.exit so a grade can never be claimed without the run behind it.
+ */
+export type EvidenceGrade = 'INFERRED' | 'SOURCE-READ' | 'TESTED';
+
+export interface GradeEvidence {
+  /** Exact command that was run, e.g. 'python -m unittest tests.test_x -q'. */
+  run: string;
+  /** Process exit code of that run. */
+  exit: number;
+}
+
+export type LinkRel = 'supersedes' | 'falsifies' | 'refines' | 'answers';
+
+export interface RecordLink {
+  rel: LinkRel;
+  id: string;
+}
 
 export interface MemoryRecord {
   id: string;
@@ -20,6 +42,14 @@ export interface MemoryRecord {
   /** Source references (files, commits, URLs, tool names). Never raw dumps. */
   sources: string[];
   claimStatus: ClaimStatus;
+  /** v2 evidence grade; claimStatus is derived from it (see store). */
+  grade: EvidenceGrade;
+  /** v2 run evidence; required when grade is TESTED. */
+  evidence: GradeEvidence | null;
+  /** v2 dependency SHAs/paths; staleness is computed from these, never stored. */
+  dependsOn: string[];
+  /** v2 explicit links to other records (falsifies, refines, answers ...). */
+  links: RecordLink[];
   /** Bumped on every supersede so writers can detect conflicts. */
   revision: number;
   /** Id of the record that replaced this one; null while current. */
@@ -35,6 +65,14 @@ export interface SaveInput {
   taskScope?: string;
   sources?: string[];
   claimStatus?: ClaimStatus;
+  /** v2 grade; default INFERRED. TESTED/SOURCE-READ imply evidenced. */
+  grade?: EvidenceGrade;
+  /** v2 run evidence; mandatory for grade TESTED. */
+  evidence?: GradeEvidence;
+  /** v2 dependency SHAs/paths used for computed staleness. */
+  dependsOn?: string[];
+  /** v2 explicit links to other records. */
+  links?: RecordLink[];
 }
 
 export interface SearchOptions {
@@ -67,6 +105,7 @@ export interface SearchHit {
   taskScope: string | null;
   sources: string[];
   claimStatus: ClaimStatus;
+  grade: EvidenceGrade;
   revision: number;
   supersededBy: string | null;
   createdAt: string;

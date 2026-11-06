@@ -29,18 +29,50 @@ function fenceStart(hit: SearchHit): string {
 
 const FENCE_END = '<<<end-untrusted-memory>>>';
 
-export function formatHit(hit: SearchHit): string {
-  const sources =
-    hit.sources.length === 0
+export function formatHit(hit: SearchHit, snippetCap?: number, withSources: boolean = true): string {
+  const snippet =
+    snippetCap !== undefined && hit.snippet.length > snippetCap
+      ? `${escapeMarkers(hit.snippet.slice(0, snippetCap).trimEnd())}…`
+      : escapeMarkers(hit.snippet);
+  const sources = !withSources
+    ? `(${hit.sources.length} sources omitted for budget; read the full record with get(id))`
+    : hit.sources.length === 0
       ? '(no sources)'
       : hit.sources.map((s) => `- ${escapeMarkers(s)}`).join('\n');
   return [
     fenceStart(hit),
     `title: ${escapeMarkers(hit.title)}`,
-    `snippet: ${escapeMarkers(hit.snippet)}`,
+    `snippet: ${snippet}`,
     `sources:\n${sources}`,
     FENCE_END,
   ].join('\n');
+}
+
+function minimumBlock(hit: SearchHit): string {
+  return [fenceStart(hit), `title: ${escapeMarkers(hit.title)}`, FENCE_END].join('\n');
+}
+
+/**
+ * Progressive formatter-level shrinking, mirroring the store's fitHit.
+ * A block that cannot fit whole is shrunk (shorter snippet, then dropped
+ * sources) before it is ever omitted, so one giant hit can no longer
+ * starve every other match out of the model-visible output. Fences stay
+ * intact at every step; omission is the last resort, not the first.
+ */
+function blockFor(hit: SearchHit, room: number): string | null {
+  const full = formatHit(hit);
+  if (full.length + 2 <= room) return full;
+  for (const cap of [160, 80, 48]) {
+    if (hit.snippet.length > cap) {
+      const shrunk = formatHit(hit, cap);
+      if (shrunk.length + 2 <= room) return shrunk;
+    }
+  }
+  const nosrc = formatHit(hit, 48, false);
+  if (nosrc.length + 2 <= room) return nosrc;
+  const min = minimumBlock(hit);
+  if (min.length + 2 <= room) return min;
+  return null;
 }
 
 export function formatSearchResults(hits: SearchHit[], maxChars: number = PI_TOOL_MAX_CHARS): string {
@@ -48,19 +80,21 @@ export function formatSearchResults(hits: SearchHit[], maxChars: number = PI_TOO
   // Degenerate budget: the formatter's own preamble may be hard-cut, but
   // untrusted blocks below are never truncated mid-block.
   if (head.length >= maxChars) return head.slice(0, Math.max(0, maxChars));
-  const blocks = hits.map(formatHit);
   let text = head;
   let omitted = 0;
-  for (const block of blocks) {
-    const add = '\n\n' + block;
-    if (text.length + add.length <= maxChars) text += add;
-    else omitted++;
+  for (const hit of hits) {
+    const block = blockFor(hit, maxChars - text.length);
+    if (block === null) {
+      omitted++;
+      continue;
+    }
+    text += '\n\n' + block;
   }
   if (omitted > 0) {
     const note = () =>
-      `\n…[${omitted} of ${blocks.length} matches omitted; output capped at ${maxChars} chars — narrow the query for the rest]`;
+      `\n…[${omitted} of ${hits.length} matches omitted; output capped at ${maxChars} chars — narrow the query for the rest]`;
     // Evict trailing whole blocks until the note fits; blocks stay intact.
-    while (omitted < blocks.length && text.length + note().length > maxChars) {
+    while (omitted < hits.length && text.length + note().length > maxChars) {
       const idx = text.lastIndexOf('\n\n<<<begin-untrusted-memory');
       if (idx <= head.length) break;
       text = text.slice(0, idx);
