@@ -19,11 +19,15 @@ try {
   try {
     const tools = createMemoryTools({ dbPath: join(dir, 'm.sqlite') });
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
-    if (!byName.memory_search || !byName.memory_save || tools.length !== 2) {
+    if (!byName.memory_search || !byName.memory_save || !byName.memory_preview || tools.length !== 3) {
       fail(ID, `unexpected tool set: ${tools.map((t) => t.name).join(',')}`);
     }
     const saveDesc = byName.memory_save.description;
-    if (!saveDesc.includes('always provisional')) fail(ID, 'save description lost provisional accuracy');
+    if (!saveDesc.includes('INFERRED default')) fail(ID, 'save description lost provisional-default accuracy');
+    if (!saveDesc.includes('never independent verification')) fail(ID, 'save description lost the self-attestation framing');
+    if (!saveDesc.includes('TESTED needs sources plus run and exit')) fail(ID, 'save description lost the TESTED enforcement rule');
+    const previewDesc = byName.memory_preview.description;
+    if (!previewDesc.includes('memory_search')) fail(ID, 'preview description does not hand off to search');
     if (saveDesc.includes('unless evidence sources are supplied')) {
       fail(ID, 'save description keeps the false evidenced-by-sources claim');
     }

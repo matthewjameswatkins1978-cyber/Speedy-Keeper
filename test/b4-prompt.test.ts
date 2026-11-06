@@ -76,11 +76,16 @@ test('the extension passes prompt metadata through and still registers no events
       else process.env['SPEEDY_KEEPER_HINT'] = savedHint;
     }
     assert.deepEqual(events, []);
-    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save']);
+    assert.deepEqual(tools.map((x) => x.name), ['memory_search', 'memory_save', 'memory_preview']);
     const search = tools.find((x) => x.name === 'memory_search')!;
     assert.ok(search.promptSnippet, 'extension must forward the snippet to Pi');
     assert.equal(search.promptGuidelines!.length, 1);
     assert.equal(tools.find((x) => x.name === 'memory_save')!.promptSnippet, undefined);
+    const preview = tools.find((x) => x.name === 'memory_preview')!;
+    assert.ok(preview.promptSnippet && preview.promptSnippet.length < 120, 'preview snippet stays short');
+    assert.match(preview.promptSnippet, /^memory_preview\b/, 'preview snippet names its tool');
+    assert.equal(preview.promptGuidelines!.length, 1, 'preview carries one guideline, like search');
+    assert.ok(!/\bmust\b|\balways\b|\bnever\b/i.test(preview.promptGuidelines![0]!), 'preview guideline stays neutral');
   } finally {
     t.cleanup();
   }

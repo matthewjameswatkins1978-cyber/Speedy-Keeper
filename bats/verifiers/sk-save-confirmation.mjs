@@ -43,7 +43,7 @@ try {
       if (text.includes('<<<')) fail(ID, `confirmation text carries marker-like content: ${text.slice(0, 200)}`);
       if (!text.includes(details.record.id)) fail(ID, 'confirmation lost the stable record id');
       const keys = Object.keys(details.record).sort().join(',');
-      if (keys !== 'claimStatus,id,kind') fail(ID, `details.record carries stored text fields: ${keys}`);
+      if (keys !== 'claimStatus,grade,id,kind') fail(ID, `details.record carries stored text fields: ${keys}`);
       const stored = JSON.stringify(details);
       for (const token of tokens) {
         if (stored.includes(token)) fail(ID, `structured details leaked stored token: ${token}`);
