@@ -707,6 +707,11 @@ export class KeeperStore {
     });
   }
 
+  /** Machine-readable capability advertisement for agents and doctor. */
+  capabilities(): { v2: boolean; kinds: readonly RecordKind[]; grades: readonly string[] } {
+    return { v2: true, kinds: KINDS, grades: ['INFERRED', 'SOURCE-READ', 'TESTED'] };
+  }
+
   /** SQLite-safe online backup via VACUUM INTO; works while the db is open. */
   backup(destPath: string): { path: string; bytes: number } {
     mkdirSync(dirname(destPath), { recursive: true });
